@@ -1,6 +1,8 @@
 import time
 import random
 from datetime import datetime
+import json
+import os
 
 class InstagramScraper:
     def __init__(self, search_query, credentials, result_queue, stop_event, process_id):
@@ -10,355 +12,310 @@ class InstagramScraper:
         self.stop_event = stop_event
         self.process_id = process_id
         self.request_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.processed_ids = set()
+        self.max_posts = 50  # Límte por defecto, igual que LinkedIn
 
-    def random_sleep(self):
-        """Sleep aleatorio entre 0.5 y 2 segundos"""
-        time.sleep(random.uniform(0.5, 2.0))
+    def random_sleep(self, min_time=1.0, max_time=3.0):
+        """Sleep aleatorio configurable para simular comportamiento humano"""
+        time.sleep(random.uniform(min_time, max_time))
+
+    def wait_for_manual_login(self, page):
+        """Espera a que el usuario inicie sesión manualmente"""
+        print("--- [Instagram] ESPERANDO INICIO DE SESIÓN MANUAL ---")
+        print("Por favor, introduce tus credenciales y resuelve el CAPTCHA/2FA si es necesario.")
+        print("El script continuará automáticamente cuando detecte que has entrado a Instagram.")
+        
+        # Esperar hasta 5 minutos (300 intentos de 1 seg)
+        max_retries = 300 
+        for i in range(max_retries):
+            if self.stop_event.is_set():
+                return False
+                
+            # Indicadores de login exitoso: Barra de navegación, Icono de Home, o Feed
+            try:
+                # Selectores típicos de usuario logueado en Instagram
+                if page.query_selector('svg[aria-label="Home"]') or \
+                   page.query_selector('svg[aria-label="Inicio"]') or \
+                   page.query_selector('a[href="/explore/"]') or \
+                   page.query_selector('img[alt*="profile"]'):
+                    print("¡Login detectado exitosamente!")
+                    return True
+            except Exception:
+                pass
+                
+            # Feedback cada 10 segundos
+            if i % 10 == 0:
+                print(f"Esperando... ({i}/{max_retries})")
+                
+            time.sleep(1)
+            
+        print("Tiempo de espera agotado. Por favor reinicia e intenta más rápido.")
+        return False
+
+    def type_slowly(self, page, selector, text):
+        """Escribe texto caracter por caracter con retraso aleatorio"""
+        try:
+            page.focus(selector)
+            for char in text:
+                page.keyboard.type(char)
+                time.sleep(random.uniform(0.05, 0.2))
+        except Exception as e:
+            print(f"Error escribiendo lento: {e}")
+
+    def save_cookies(self, page):
+        """Guardar cookies en archivo local"""
+        try:
+            cookies = page.context.cookies()
+            with open('instagram_cookies.json', 'w') as f:
+                json.dump(cookies, f)
+            print("[Instagram] Cookies guardadas exitosamente.")
+        except Exception as e:
+            print(f"Error guardando cookies: {e}")
+
+    def load_cookies(self, page):
+        """Cargar cookies si existen"""
+        if os.path.exists('instagram_cookies.json'):
+            try:
+                with open('instagram_cookies.json', 'r') as f:
+                    cookies = json.load(f)
+                    page.context.add_cookies(cookies)
+                return True
+            except Exception as e:
+                print(f"Error cargando cookies: {e}")
+        return False
+
+    def inject_stealth(self, page):
+        """Inyectar scripts para ocultar automatización"""
+        page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+        """)
+
+    def check_for_captcha(self, page):
+        """Verificar si hay CAPTCHA/Challenge y pausar"""
+        # Instagram suele mostrar "Suspicious Login Attempt" o "Challenge"
+        if "challenge" in page.url or page.query_selector('h2:has-text("Challenge")') or page.query_selector('h2:has-text("Suspicious")'):
+            print("!!! INSTAGRAM CHALLENGE DETECTADO !!! Por favor resuélvelo manualmente en el navegador.")
+            print("El script continuará cuando desaparezca el reto...")
+            while "challenge" in page.url:
+                time.sleep(5)
+            print("Challenge resuelto, continuando...")
+
+    def handle_popups(self, page):
+        """Manejar popups molestos (Cookies, Not Now, etc)"""
+        # Cookies
+        cookie_selectors = [
+            'button:has-text("Allow all cookies")', 'button:has-text("Permitir todas las cookies")',
+            'button:has-text("Accept")', 'button:has-text("Aceptar")',
+            'button:has-text("Allow")', 'button:has-text("Permitir")'
+        ]
+        for sel in cookie_selectors:
+            try:
+                btn = page.locator(sel).first
+                if btn.is_visible(timeout=500):
+                    btn.click()
+                    self.random_sleep(0.5, 1)
+            except: pass
+
+        # "Turn on Notifications" / "Save Login Info"
+        not_now_selectors = [
+            'button:has-text("Not Now")', 'button:has-text("Ahora no")',
+            'div[role="button"]:has-text("Not Now")', 'div[role="button"]:has-text("Ahora no")'
+        ]
+        for sel in not_now_selectors:
+            try:
+                btn = page.locator(sel).first
+                if btn.is_visible(timeout=500):
+                    btn.click()
+                    self.random_sleep(0.5, 1)
+            except: pass
 
     def run(self, page):
-        """Scraper para Instagram"""
+        """Scraper para Instagram con Login Manual Híbrido"""
         try:
-            # Configurar timeout más largo
+            self.inject_stealth(page)
             page.set_default_timeout(60000)
             
-            # Login
-            print("[Instagram] Navegando a login...")
-            page.goto("https://www.instagram.com/accounts/login/", wait_until="domcontentloaded")
-            time.sleep(8)  # Esperar carga completa de JS
+            # 1. Intentar cargar cookies previas
+            if self.load_cookies(page):
+                print("[Instagram] Cookies cargadas. Verificando sesión...")
             
-            # Manejar popup de cookies - Instagram usa un banner específico
-            print("[Instagram] Buscando popup de cookies...")
-            try:
-                # Buscar botones de cookies con múltiples estrategias
-                cookie_selectors = [
-                    'button:has-text("Allow all cookies")',
-                    'button:has-text("Permitir todas las cookies")',
-                    'button:has-text("Allow essential and optional cookies")',
-                    'button:has-text("Permitir cookies esenciales y opcionales")',
-                    'button:has-text("Accept All")',
-                    'button:has-text("Aceptar todo")',
-                    'button:has-text("Accept")',
-                    'button:has-text("Aceptar")',
-                    'button:has-text("Allow")',
-                    'button:has-text("Permitir")',
-                    '[role="dialog"] button:first-of-type',
-                    'div[role="dialog"] button'
-                ]
+            # 2. Navegar a la home
+            page.goto("https://www.instagram.com/")
+            self.random_sleep(3, 5)
+            
+            # 3. Verificar estado de la sesión
+            # Si vemos campos de login o estamos en /accounts/login, es que no estamos logueados
+            is_guest = page.query_selector('input[name="username"]') or \
+                       "login" in page.url or \
+                       page.query_selector('button:has-text("Log In")')
+            
+            if is_guest:
+                print("[Instagram] No se detectó sesión activa. Redirigiendo a login manual...")
+                if "login" not in page.url:
+                    page.goto("https://www.instagram.com/accounts/login/")
                 
-                cookie_found = False
-                for selector in cookie_selectors:
-                    try:
-                        cookie_btn = page.locator(selector).first
-                        if cookie_btn.is_visible(timeout=3000):
-                            cookie_btn.click()
-                            print(f"[Instagram] Cookie popup cerrado con: {selector}")
-                            cookie_found = True
-                            time.sleep(3)
-                            break
-                    except:
-                        continue
-                
-                if not cookie_found:
-                    print("[Instagram] No se encontró popup de cookies o ya fue cerrado")
-            except Exception as e:
-                print(f"[Instagram] Error en cookies: {e}")
+                # 4. Esperar al usuario
+                if self.wait_for_manual_login(page):
+                    # Login exitoso -> Guardar cookies nuevas
+                    self.save_cookies(page)
+                    self.random_sleep(3, 5)
+                else:
+                    return # Cancelado o timeout
+            else:
+                print("[Instagram] Sesión válida confirmada.")
+
+            self.handle_popups(page)
+
+            # 5. Búsqueda
+            # Limpiar query para usar como tag o búsqueda
+            clean_query = self.query.replace(' ', '').lower()
             
-            # Esperar al formulario de login - intentar varias veces
-            print("[Instagram] Buscando formulario de login...")
-            username_input = None
+            # Navegación directa a Explorer/Tags suele ser más robusta que usar la barra de búsqueda que varía mucho
+            search_url = f"https://www.instagram.com/explore/tags/{clean_query}/"
+            print(f"[Instagram] Navegando a: {search_url}")
+            page.goto(search_url)
+            self.random_sleep(4, 6)
             
-            for attempt in range(5):
-                try:
-                    username_input = page.wait_for_selector('input[name="username"]', timeout=8000, state="visible")
-                    if username_input:
-                        print(f"[Instagram] Username input encontrado (intento {attempt+1})")
-                        break
-                except:
-                    print(f"[Instagram] Intento {attempt+1}: input no encontrado, verificando cookies...")
-                    # Intentar cerrar cookies de nuevo
-                    try:
-                        cookie_btn = page.locator('button:has-text("Allow"), button:has-text("Permitir"), button:has-text("Accept"), button:has-text("Aceptar")').first
-                        if cookie_btn.is_visible(timeout=2000):
-                            cookie_btn.click()
-                            print("[Instagram] Cookie popup cerrado en reintento")
-                            time.sleep(3)
-                    except:
-                        pass
-                    time.sleep(2)
-            
-            if not username_input:
-                # Debug: listar todos los elementos visibles
-                print("[Instagram] ERROR: No se encontró input de username")
-                print(f"[Instagram] URL actual: {page.url}")
-                inputs = page.query_selector_all('input')
-                print(f"[Instagram] Inputs encontrados: {len(inputs)}")
-                for inp in inputs:
-                    try:
-                        inp_name = inp.get_attribute('name')
-                        inp_type = inp.get_attribute('type')
-                        print(f"[Instagram]   - name={inp_name}, type={inp_type}")
-                    except:
-                        pass
-                raise Exception("No se encontró campo de username")
-            
-            username_input.click()
-            time.sleep(0.5)
-            username_input.fill(self.credentials['email'])
-            self.random_sleep()
-            
-            password_input = page.wait_for_selector('input[name="password"]', timeout=10000, state="visible")
-            password_input.click()
-            time.sleep(0.5)
-            password_input.fill(self.credentials['password'])
-            self.random_sleep()
-            
-            # Click en login
-            print("[Instagram] Haciendo login...")
-            login_btn = page.locator('button[type="submit"]').first
-            login_btn.click()
-            
-            # Esperar a que cargue
-            print("[Instagram] Esperando respuesta del login...")
-            time.sleep(10)  # Tiempo fijo para permitir la redirección
-            
-            # Manejar popups post-login
-            print("[Instagram] Manejando popups post-login...")
-            
-            not_now_selectors = [
-                'button:has-text("Not Now")',
-                'button:has-text("Ahora no")',
-                'button:has-text("Not now")',
-                'div[role="button"]:has-text("Not Now")',
-                'div[role="button"]:has-text("Ahora no")'
-            ]
-            
-            # Intentar cerrar popups varias veces
-            for _ in range(3):
-                try:
-                    for selector in not_now_selectors:
-                        try:
-                            btn = page.locator(selector).first
-                            if btn.is_visible(timeout=3000):
-                                btn.click()
-                                print(f"[Instagram] Popup cerrado con: {selector}")
-                                time.sleep(2)
-                                break
-                        except:
-                            continue
-                except:
-                    pass
-                time.sleep(1)
-            
-            # Usar búsqueda en lugar de navegar a hashtag directo
-            print("[Instagram] Usando barra de búsqueda...")
-            
-            # Ir a la página principal primero
-            page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
-            time.sleep(5)
-            
-            # Buscar y hacer click en el ícono de búsqueda
-            search_clicked = False
-            search_selectors = [
-                'a[href="/explore/"]',
-                'svg[aria-label="Search"]',
-                'svg[aria-label="Buscar"]',
-                'a:has(svg[aria-label="Search"])',
-                'a:has(svg[aria-label="Buscar"])',
-                'span:has-text("Search")',
-                'span:has-text("Buscar")'
-            ]
-            
-            for selector in search_selectors:
-                try:
-                    search_btn = page.locator(selector).first
-                    if search_btn.is_visible(timeout=3000):
-                        search_btn.click()
-                        print(f"[Instagram] Click en búsqueda con: {selector}")
-                        search_clicked = True
-                        time.sleep(3)
-                        break
-                except:
-                    continue
-            
-            if not search_clicked:
-                # Ir directamente a explore
-                print("[Instagram] Navegando a explore...")
-                page.goto("https://www.instagram.com/explore/", wait_until="domcontentloaded")
-                time.sleep(5)
-            
-            # Buscar campo de búsqueda
-            search_input = None
-            search_input_selectors = [
-                'input[placeholder="Search"]',
-                'input[placeholder="Buscar"]',
-                'input[aria-label="Search input"]',
-                'input[aria-label="Entrada de búsqueda"]',
-                'input[type="text"]'
-            ]
-            
-            for selector in search_input_selectors:
-                try:
-                    search_input = page.wait_for_selector(selector, timeout=5000, state="visible")
-                    if search_input:
-                        print(f"[Instagram] Input de búsqueda encontrado: {selector}")
-                        break
-                except:
-                    continue
-            
+            # Verificar si existe la página de tag
+            if page.query_selector('h2:has-text("isn\'t available")') or page.query_selector('h2:has-text("no está disponible")'):
+                 print("[Instagram] El tag no parece existir o no tiene resultados.")
+                 return
+
             post_count = 0
             processed_urls = set()
-            
-            if search_input:
-                # Escribir búsqueda
-                clean_query = self.query.replace(' ', '')
-                search_input.click()
-                time.sleep(0.5)
-                search_input.fill(f"#{clean_query}")
-                print(f"[Instagram] Buscando: #{clean_query}")
-                time.sleep(3)
-                
-                # Hacer click en el primer resultado de hashtag
-                try:
-                    hashtag_result = page.locator(f'a[href*="/explore/tags/"], span:has-text("#{clean_query}")').first
-                    if hashtag_result.is_visible(timeout=5000):
-                        hashtag_result.click()
-                        print("[Instagram] Click en resultado de hashtag")
-                        time.sleep(5)
-                except Exception as e:
-                    print(f"[Instagram] No se pudo hacer click en hashtag: {e}")
-                    # Navegar directamente
-                    page.goto(f"https://www.instagram.com/explore/tags/{clean_query.lower()}/", wait_until="domcontentloaded")
-                    time.sleep(5)
-            else:
-                # Ir directo al hashtag
-                clean_query = self.query.replace(' ', '').lower()
-                page.goto(f"https://www.instagram.com/explore/tags/{clean_query}/", wait_until="domcontentloaded")
-                time.sleep(5)
-            
-            # Obtener URL actual para volver después
-            search_url = page.url
-            print(f"[Instagram] URL de búsqueda: {search_url}")
-            
-            # Debug: mostrar estructura de la página
-            print("[Instagram] Analizando estructura de la página...")
-            all_links = page.query_selector_all('a[href*="/p/"], a[href*="/reel/"]')
-            print(f"[Instagram] Links a posts/reels encontrados: {len(all_links)}")
-            
-            if len(all_links) == 0:
-                # Intentar con otros selectores
-                articles = page.query_selector_all('article')
-                print(f"[Instagram] Articles encontrados: {len(articles)}")
-                divs_with_style = page.query_selector_all('div[style*="padding"]')
-                print(f"[Instagram] Divs con padding: {len(divs_with_style)}")
-            
-            print("[Instagram] Iniciando extracción de posts...")
-            empty_count = 0
+            print("[Instagram] Entrando al bucle de extracción...")
             
             while not self.stop_event.is_set():
-                try:
-                    # Buscar posts con múltiples selectores
-                    posts = page.query_selector_all('a[href*="/p/"]')
-                    
-                    if len(posts) == 0:
-                        posts = page.query_selector_all('a[href*="/reel/"]')
-                    
-                    if len(posts) == 0:
-                        # Intentar encontrar cualquier link dentro de article
-                        posts = page.query_selector_all('article a')
-                    
-                    print(f"[Instagram] Posts encontrados: {len(posts)}")
-                    
-                    if not posts or len(posts) == 0:
-                        empty_count += 1
-                        if empty_count > 10:
-                            print("[Instagram] Demasiados intentos sin posts, puede que no haya contenido")
-                            # Intentar ir al feed principal
-                            print("[Instagram] Intentando con feed principal...")
-                            page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
-                            time.sleep(5)
-                            empty_count = 0
-                        else:
-                            print("[Instagram] Scrolling para cargar más...")
-                            page.evaluate("window.scrollBy(0, window.innerHeight)")
-                            time.sleep(3)
-                        continue
-                    
-                    empty_count = 0
-                    
-                    for post in posts[:10]:
-                        if self.stop_event.is_set():
-                            break
+                if post_count >= self.max_posts:
+                    print(f"[Instagram] Límite de {self.max_posts} posts alcanzado. Finalizando...")
+                    break
+
+                self.check_for_captcha(page)
+                
+                # Scroll para cargar
+                page.evaluate("window.scrollBy(0, window.innerHeight * 0.8)")
+                self.random_sleep(2, 4)
+                
+                # Seleccionar posts (links a /p/ o /reel/)
+                # En la vista de Grid de tags, son enlaces 'a'
+                posts_links = page.query_selector_all('a[href*="/p/"]') + page.query_selector_all('a[href*="/reel/"]')
+                
+                print(f"[Instagram] Encontrados {len(posts_links)} candidatos visibles.")
+                
+                for link in posts_links:
+                    if self.stop_event.is_set():
+                        break
+                    if post_count >= self.max_posts:
+                        break
+
+                    try:
+                        post_url = link.get_attribute('href')
+                        if not post_url: continue
                         
-                        try:
-                            post_url = post.get_attribute('href')
-                            if not post_url or post_url in processed_urls:
-                                continue
+                        full_url = f"https://www.instagram.com{post_url}" if post_url.startswith('/') else post_url
+                        
+                        if full_url in processed_urls:
+                            continue
                             
-                            # Solo procesar posts (/p/) o reels (/reel/)
-                            if '/p/' not in post_url and '/reel/' not in post_url:
-                                continue
-                                
-                            processed_urls.add(post_url)
-                            
-                            # Navegar al post
-                            full_url = f"https://www.instagram.com{post_url}" if post_url.startswith('/') else post_url
-                            print(f"[Instagram] Visitando: {full_url}")
-                            page.goto(full_url, wait_until="domcontentloaded")
-                            time.sleep(4)
-                            
-                            # Buscar texto del caption
+                        # Abrir post en una "pestaña" o visitarlo y volver (visitando es más seguro para evitar abrir mil tabs)
+                        # Pero para mantener el flujo de scroll, a veces es mejor abrir en nueva página o hacer click y cerrar modal.
+                        # En la vista de tags, al hacer click se abre un modal overlay.
+                        
+                        print(f"[Instagram] Procesando: {full_url}")
+                        
+                        # Estrategia: Navegar directamente para asegurar extracción limpia
+                        # Guardamos scroll position o simplemente volvemos a cargar url de busqueda
+                        # (Navegar ida y vuelta es lento pero seguro).
+                        # O intentamos click para modal. El modal es más rápido.
+                        
+                        link.click()
+                        self.random_sleep(2, 4)
+                        
+                        # Esperar a que cargue el contenido del modal o página
+                        # El contenedor del post suele ser 'article'
+                        article = page.wait_for_selector('article', timeout=5000)
+                        
+                        if article:
+                            # Extraer datos
                             text_content = "N/A"
-                            
-                            # Primero intentar con meta tag
+                            # Intentar buscar caption en h1 o span dentro de ul (comentarios)
+                            # El caption suele ser el primer elemento de la lista de comentarios
                             try:
-                                meta = page.query_selector('meta[property="og:description"]')
-                                if meta:
-                                    text_content = meta.get_attribute('content') or "N/A"
-                            except:
-                                pass
+                                caption_elem = article.query_selector('h1') or \
+                                               article.query_selector('ul li div div div span') 
+                                if caption_elem:
+                                    text_content = caption_elem.inner_text()
+                            except: pass
                             
-                            if text_content == "N/A" or len(text_content) < 5:
-                                # Intentar con h1
-                                try:
-                                    h1 = page.query_selector('h1')
-                                    if h1:
-                                        text_content = h1.inner_text()
-                                except:
-                                    pass
+                            # Extraer Comentarios
+                            comments_text = ""
+                            try:
+                                # Buscar elementos de lista que parecen comentarios
+                                # En el modal, suele haber un ul con varios li. El primero es el caption, el resto comentarios
+                                comments = article.query_selector_all('ul li')
+                                if len(comments) > 1:
+                                    extracted_comments = []
+                                    # Empezamos desde 1 para saltar el caption (si es que la estructura es esa)
+                                    # O verificamos texto para no duplicar caption
+                                    for i, comm in enumerate(comments[1:6]): # Limitar a 5 comentarios para no saturar
+                                        try:
+                                            # El texto suele estar en un span nested
+                                            comm_text_elem = comm.query_selector('span')
+                                            if comm_text_elem:
+                                                c_text = comm_text_elem.inner_text().replace('\n', ' ').strip()
+                                                if c_text and c_text not in text_content: # Evitar duplicar caption
+                                                    extracted_comments.append(c_text)
+                                        except: continue
+                                    
+                                    if extracted_comments:
+                                        comments_text = " [COMENTARIOS] " + " | ".join(extracted_comments)
+                            except Exception as e:
+                                print(f"[Instagram] Error extrayendo comentarios: {e}")
+
+                            # Fecha
+                            pub_date = "N/A"
+                            time_elem = article.query_selector('time')
+                            if time_elem:
+                                pub_date = time_elem.get_attribute('datetime')
+                                
+                            post_id = post_url.split('/')[-2] # p/ID/ -> ID
                             
-                            # Buscar fecha
-                            time_elem = page.query_selector('time')
-                            pub_date = time_elem.get_attribute('datetime') if time_elem else "N/A"
-                            
-                            post_id = f"IG_{post_count}_{int(time.time())}"
+                            full_text = (text_content + comments_text).replace('\n', ' ')
                             
                             data = {
                                 'RedSocial': 'Instagram',
-                                'IDP': self.process_id,
+                                'IDP': os.getpid(),
                                 'Request': self.query,
                                 'FechaPeticion': self.request_date,
                                 'FechaPublicacion': pub_date,
                                 'idPublicacion': post_id,
-                                'Data': text_content.replace('\n', ' ')[:500]
+                                'Data': full_text[:2000] # Limitar longitud total aumentada
                             }
                             
                             self.result_queue.put(data)
+                            processed_urls.add(full_url)
                             post_count += 1
-                            print(f"[Instagram] Post #{post_count} extraído")
+                            print(f"[Instagram] Post extraído: {post_id}")
                             
-                        except Exception as e:
-                            print(f"[Instagram] Error en post: {e}")
-                    
-                    # Volver y scroll
-                    print("[Instagram] Volviendo a búsqueda...")
-                    page.goto(search_url, wait_until="domcontentloaded")
-                    time.sleep(3)
-                    page.evaluate("window.scrollBy(0, window.innerHeight * 2)")
-                    time.sleep(3)
-                    
-                except Exception as e:
-                    print(f"[Instagram] Error en loop: {e}")
-                    time.sleep(3)
-                
+                            # Cerrar modal si es modal
+                            close_btn = page.query_selector('svg[aria-label="Close"]') or \
+                                        page.query_selector('svg[aria-label="Cerrar"]')
+                            if close_btn:
+                                close_btn.click()
+                            else:
+                                # Si no hay botón de cerrar, quizás navegó. Volver atrás.
+                                page.go_back()
+                                
+                            self.random_sleep(1, 3)
+                            
+                    except Exception as e:
+                        print(f"[Instagram] Error procesando post: {e}")
+                        # Intentar recuperar navegación
+                        if "explore/tags" not in page.url:
+                             page.goto(search_url)
+                             self.random_sleep(3)
+
         except Exception as e:
             print(f"Error en Instagram: {e}")

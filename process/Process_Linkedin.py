@@ -22,9 +22,9 @@ class LinkedinScraper:
 
     def wait_for_manual_login(self, page):
         """Espera a que el usuario inicie sesión manualmente"""
-        print("--- ESPERANDO INICIO DE SESIÓN MANUAL ---")
-        print("Por favor, introduce tus credenciales y resuelve el CAPTCHA si es necesario.")
-        print("El script continuará automáticamente cuando detecte que has entrado a LinkedIn.")
+        print("[LinkedIn] --- ESPERANDO INICIO DE SESIÓN MANUAL ---")
+        print("[LinkedIn] Por favor, introduce tus credenciales y resuelve el CAPTCHA si es necesario.")
+        print("[LinkedIn] El script continuará automáticamente cuando detecte que has entrado a LinkedIn.")
         
         # Esperar hasta 5 minutos (300 intentos de 1 seg)
         max_retries = 300 
@@ -37,7 +37,7 @@ class LinkedinScraper:
                 if page.query_selector('.global-nav__content') or \
                    page.query_selector('#global-nav') or \
                    page.query_selector('.feed-shared-update-v2'):
-                    print("¡Login detectado exitosamente!")
+                    print("[LinkedIn] ¡Login detectado exitosamente!")
                     return True
             except Exception:
                 # Si la página está navegando/recargando, puede fallar el contexto. Ignorar y reintentar.
@@ -45,11 +45,11 @@ class LinkedinScraper:
                 
             # Feedback cada 10 segundos
             if i % 10 == 0:
-                print(f"Esperando... ({i}/{max_retries})")
+                print(f"[LinkedIn] Esperando... ({i}/{max_retries})")
                 
             time.sleep(1)
             
-        print("Tiempo de espera agotado. Por favor reinicia e intenta más rápido.")
+        print("[LinkedIn] Tiempo de espera agotado. Por favor reinicia e intenta más rápido.")
         return False
 
 
@@ -67,7 +67,7 @@ class LinkedinScraper:
             with open('linkedin_cookies.json', 'w') as f:
                 json.dump(cookies, f)
         except Exception as e:
-            print(f"Error guardando cookies: {e}")
+            print(f"[LinkedIn] Error guardando cookies: {e}")
 
     def load_cookies(self, page):
         """Cargar cookies si existen"""
@@ -78,7 +78,7 @@ class LinkedinScraper:
                     page.context.add_cookies(cookies)
                 return True
             except Exception as e:
-                print(f"Error cargando cookies: {e}")
+                print(f"[LinkedIn] Error cargando cookies: {e}")
         return False
 
     def inject_stealth(self, page):
@@ -92,11 +92,11 @@ class LinkedinScraper:
     def check_for_captcha(self, page):
         """Verificar si hay CAPTCHA y pausar"""
         if page.query_selector('.challenge-dialog') or "challenge" in page.url:
-            print("!!! CAPTCHA DETECTADO !!! Por favor resuélvelo manualmente en el navegador.")
-            print("El script continuará cuando desaparezca el CAPTCHA...")
+            print("[LinkedIn] !!! CAPTCHA DETECTADO !!! Por favor resuélvelo manualmente en el navegador.")
+            print("[LinkedIn] El script continuará cuando desaparezca el CAPTCHA...")
             while page.query_selector('.challenge-dialog') or "challenge" in page.url:
                 time.sleep(5)
-            print("CAPTCHA resuelto, continuando...")
+            print("[LinkedIn] CAPTCHA resuelto, continuando...")
 
     def run(self, page):
         """Scraper para LinkedIn con Login Manual Híbrido"""
@@ -105,7 +105,7 @@ class LinkedinScraper:
             
             # 1. Intentar cargar cookies previas
             if self.load_cookies(page):
-                print("Cookies cargadas. Verificando sesión...")
+                print("[LinkedIn] Cookies cargadas. Verificando sesión...")
             
             # 2. Navegar a la home
             page.goto("https://www.linkedin.com")
@@ -119,7 +119,7 @@ class LinkedinScraper:
                        "guest" in page.url
             
             if is_guest:
-                print("No se detectó sesión activa. Redirigiendo a login manual...")
+                print("[LinkedIn] No se detectó sesión activa. Redirigiendo a login manual...")
                 # Asegurar que estamos en la página de login
                 if "login" not in page.url:
                     page.goto("https://www.linkedin.com/login")
@@ -133,23 +133,23 @@ class LinkedinScraper:
                 else:
                     return # Cancelado o timeout
             else:
-                print("Sesión válida confirmada.")
+                print("[LinkedIn] Sesión válida confirmada.")
 
             # 5. Proceder a la búsqueda (Scraping Normal)
 
 
             # Búsqueda
             search_url = f"https://www.linkedin.com/search/results/content/?keywords={self.query}"
-            print(f"Navegando a: {search_url}")
+            print(f"[LinkedIn] Navegando a: {search_url}")
             page.goto(search_url)
             self.random_sleep(3, 5)
             
             post_count = 0
-            print("Entrando al bucle de extracción...")
-            print("Entrando al bucle de extracción...")
+            print("[LinkedIn] Entrando al bucle de extracción...")
+            print("[LinkedIn] Entrando al bucle de extracción...")
             while not self.stop_event.is_set():
                 if post_count >= self.max_posts:
-                    print(f"Límite de {self.max_posts} posts alcanzado. Finalizando...")
+                    print(f"[LinkedIn] Límite de {self.max_posts} posts alcanzado. Finalizando...")
                     break
 
                 self.check_for_captcha(page)
@@ -171,13 +171,13 @@ class LinkedinScraper:
                 # Los posts están en div con role="listitem"
                 posts = page.query_selector_all('div[role="listitem"]')
                 
-                print(f"DEBUG: Encontrados {len(posts)} posts (selector role=listitem)")
+                print(f"[LinkedIn] DEBUG: Encontrados {len(posts)} posts (selector role=listitem)")
                 
                 if len(posts) == 0:
                     # Fallback a otros selectores si cambia
                     posts = page.query_selector_all('.feed-shared-update-v2') or \
                             page.query_selector_all('.occludable-update')
-                    print(f"DEBUG: Encontrados {len(posts)} posts (selectores legacy)")
+                    print(f"[LinkedIn] DEBUG: Encontrados {len(posts)} posts (selectores legacy)")
                 
                 for post in posts:
                     if self.stop_event.is_set():
@@ -256,18 +256,42 @@ class LinkedinScraper:
                              post_id = f"LI_{post_count}_{int(time.time())}"
                         
                         if post_id in self.processed_ids:
-                            # print(f"DEBUG: Post ya procesado: {post_id}")
+                            # print(f"[LinkedIn] DEBUG: Post ya procesado: {post_id}")
                             continue
+
+                        # --- EXTRAER COMENTARIOS ---
+                        comments_text = ""
+                        try:
+                            # Los comentarios suelen estar en elementos con clase .comments-comment-item
+                            # Intentar buscar dentro del post actual
+                            comments = post.query_selector_all('.comments-comment-item')
+                            
+                            extracted_comments = []
+                            for comm in comments[:3]: # Limitar a 3 comentarios
+                                try:
+                                    # Texto del comentario
+                                    comm_body = comm.query_selector('.comments-comment-item__main-content')
+                                    if comm_body:
+                                        c_text = comm_body.inner_text().replace('\n', ' ').strip()
+                                        if c_text:
+                                            extracted_comments.append(c_text)
+                                except: continue
+                            
+                            if extracted_comments:
+                                comments_text = " [COMENTARIOS] " + " | ".join(extracted_comments)
+                                print(f"[LinkedIn] +{len(extracted_comments)} comentarios en post {post_id[:10]}...")
+                        except: pass
+                        
+                        full_text = (text_content + comments_text).replace('\n', ' ')
                             
                         data = {
                             'RedSocial': 'LinkedIn',
-                            'IDP': self.process_id,
+                            'IDP': os.getpid(),
                             'Request': self.query,
                             'FechaPeticion': self.request_date,
                             'FechaPublicacion': pub_date,
                             'idPublicacion': post_id,
-                            'idPublicacion': post_id,
-                            'Data': text_content.replace('\n', ' ')
+                            'Data': full_text
                         }
                         
                         # Limpieza final de sufijos basura ("... más", "... see more")
@@ -281,7 +305,7 @@ class LinkedinScraper:
                         self.result_queue.put(data)
                         self.processed_ids.add(post_id)
                         post_count += 1
-                        print(f"DEBUG: Post extraído nuevo: {post_id[:20]}...")
+                        print(f"[LinkedIn] Post extraído nuevo: {post_id[:20]}...")
                         
                         # Retraso de seguridad (Stealth Mode)
                         # Simula lectura humana entre posts
@@ -289,12 +313,12 @@ class LinkedinScraper:
                         
                     except Exception as e:
                         # Errores puntuales en un post no deben parar todo
-                        # print(f"DEBUG: Error extrayendo post: {e}")
+                        # print(f"[LinkedIn] DEBUG: Error extrayendo post: {e}")
                         continue
                 
                 # Scroll para cargar más
                 self.random_sleep(2, 4)
                 
         except Exception as e:
-            print(f"Error en LinkedIn: {e}")
+            print(f"[LinkedIn] Error en LinkedIn: {e}")
 
