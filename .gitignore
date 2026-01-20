@@ -3,3 +3,6 @@ practica.pdf
 __pycache__
 linkedin_cookies.json
 resultados.csv
+resultados_LinkedIn.csv
+.venv
+*.csv
