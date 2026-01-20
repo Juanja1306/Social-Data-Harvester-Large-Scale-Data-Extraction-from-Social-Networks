@@ -13,18 +13,15 @@ from dotenv import load_dotenv
 # Cargar variables de entorno
 load_dotenv()
 
-def csv_writer_process(result_queue, stop_event, filename="resultados.csv"):
+def csv_writer_process(result_queue, stop_event, filename="resultados_LinkedIn.csv"):
     """Proceso dedicado para escribir en CSV (evita condición de carrera)"""
     fieldnames = ['RedSocial', 'IDP', 'Request', 'FechaPeticion', 
                   'FechaPublicacion', 'idPublicacion', 'Data']
     
-    file_exists = os.path.isfile(filename)
-    
-    with open(filename, 'a', newline='', encoding='utf-8') as csvfile:
+    # Modo 'w' para sobreescribir/reiniciar archivo en cada ejecución
+    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        
-        if not file_exists:
-            writer.writeheader()
+        writer.writeheader()
         
         while not stop_event.is_set() or not result_queue.empty():
             try:
@@ -128,7 +125,7 @@ class ScraperGUI:
         }
         
         # Facebook deshabilitado temporalmente
-        networks = ["LinkedIn", "Twitter", "Instagram"]
+        networks = ["LinkedIn"] #, "Twitter", "Instagram"]
         
         # Iniciar proceso escritor
         self.writer_process = Process(target=csv_writer_process, 
@@ -207,7 +204,8 @@ class ScraperGUI:
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
         self.status_label.config(text="Estado: Detenido")
-        self.log("Búsqueda detenida. Datos guardados en resultados.csv")
+        self.status_label.config(text="Estado: Detenido")
+        self.log("Búsqueda detenida. Datos guardados en resultados_LinkedIn.csv")
 
 
 if __name__ == "__main__":
