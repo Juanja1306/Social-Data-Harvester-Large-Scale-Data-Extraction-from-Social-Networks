@@ -13,23 +13,57 @@ from dotenv import load_dotenv
 # Cargar variables de entorno
 load_dotenv()
 
-def csv_writer_process(result_queue, stop_event, filename="resultados_LinkedIn.csv"):
-    """Proceso dedicado para escribir en CSV (evita condición de carrera)"""
+def csv_writer_process(result_queue, stop_event):
+    """Proceso dedicado para escribir en CSVs separados por red social"""
     fieldnames = ['RedSocial', 'IDP', 'Request', 'FechaPeticion', 
                   'FechaPublicacion', 'idPublicacion', 'Data']
     
-    # Modo 'w' para sobreescribir/reiniciar archivo en cada ejecución
-    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        
+    # Diccionario para mantener los manejadores de archivos: { 'RedSocial': (file_handle, dict_writer) }
+    file_handles = {}
+    
+    try:
         while not stop_event.is_set() or not result_queue.empty():
             try:
                 data = result_queue.get(timeout=1)
+                network = data.get('RedSocial', 'Unknown')
+                
+                # Si no tenemos un archivo abierto para esta red, lo creamos
+                if network not in file_handles:
+                    filename = f"resultados_{network}.csv"
+                    # Modo 'a' para append si ya existe (o 'w' si quieres reiniciar cada vez)
+                    # El usuario pidió guardar respectivamente, asumiremos append o w según lógica original.
+                    # El original usaba 'w', así que usaremos 'w' para reiniciar por ejecución
+                    # OJO: Si hay multiples procesos escribiendo de la misma red, esto funciona porque 
+                    # solo hay un csv_writer_process centralizado.
+                    
+                    # Verificar si existe para escribir header
+                    file_exists = os.path.isfile(filename)
+                    f = open(filename, 'a', newline='', encoding='utf-8')
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    
+                    if not file_exists:
+                        writer.writeheader()
+                        
+                    file_handles[network] = (f, writer)
+                    print(f"Abierto archivo de resultados: {filename}")
+                
+                # Escribir dato
+                f, writer = file_handles[network]
                 writer.writerow(data)
-                csvfile.flush()
+                f.flush()
+                
             except queue.Empty:
                 continue
+            except Exception as e:
+                print(f"Error escribiendo CSV: {e}")
+                
+    finally:
+        # Cerrar todos los archivos al terminar
+        for f, _ in file_handles.values():
+            try:
+                f.close()
+            except:
+                pass
 
 
 class ScraperGUI:
@@ -125,7 +159,7 @@ class ScraperGUI:
         }
         
         # Facebook deshabilitado temporalmente
-        networks = ["LinkedIn"] #, "Twitter", "Instagram"]
+        networks = ["LinkedIn", "Instagram"] #, "Twitter"]
         
         # Iniciar proceso escritor
         self.writer_process = Process(target=csv_writer_process, 
@@ -205,7 +239,7 @@ class ScraperGUI:
         self.stop_btn.config(state="disabled")
         self.status_label.config(text="Estado: Detenido")
         self.status_label.config(text="Estado: Detenido")
-        self.log("Búsqueda detenida. Datos guardados en resultados_LinkedIn.csv")
+        self.log("Búsqueda detenida. Datos guardados en archivos CSV separados por red social.")
 
 
 if __name__ == "__main__":
