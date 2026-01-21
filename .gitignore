@@ -8,3 +8,4 @@ resultados_LinkedIn.csv
 *.csv
 *.json
 *.html
+nlp_outputs/
