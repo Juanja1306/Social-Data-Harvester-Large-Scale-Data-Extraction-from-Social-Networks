@@ -75,16 +75,6 @@ def csv_writer_process(result_queue, stop_event, filename="resultados.csv"):
                 csvfile.flush()
             except queue.Empty:
                 continue
-            except Exception as e:
-                print(f"Error escribiendo CSV: {e}")
-                
-    finally:
-        # Cerrar todos los archivos al terminar
-        for f, _ in file_handles.values():
-            try:
-                f.close()
-            except:
-                pass
 
 
 class ScraperGUI:
