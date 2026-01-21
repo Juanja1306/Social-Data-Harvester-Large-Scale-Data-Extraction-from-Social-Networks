@@ -6,15 +6,15 @@ import os
 
 
 class LinkedinScraper:
-    def __init__(self, search_query, credentials, result_queue, stop_event, process_id):
+    def __init__(self, search_query, result_queue, stop_event, max_posts=50):
         self.query = search_query
-        self.credentials = credentials
         self.result_queue = result_queue
         self.stop_event = stop_event
-        self.process_id = process_id
+        # Usar el PID real del proceso
+        self.process_id = os.getpid()
         self.request_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.processed_ids = set()
-        self.max_posts = 50 # Límite por defecto
+        self.max_posts = max_posts
 
     def random_sleep(self, min_time=0.5, max_time=2.0):
         """Sleep aleatorio configurable"""
@@ -88,6 +88,159 @@ class LinkedinScraper:
                 get: () => undefined
             });
         """)
+
+    def extract_comments_from_post_page(self, page, post_url, max_comments=5):
+        """Extraer comentarios navegando a la página individual del post de LinkedIn"""
+        comments = []
+        try:
+            # Guardar URL actual
+            current_url = page.url
+            
+            # Navegar al post individual
+            print(f"[LinkedIn] Navegando al post: {post_url[:60]}...")
+            page.goto(post_url, wait_until="domcontentloaded")
+            self.random_sleep(2, 4)
+            
+            # Verificar CAPTCHA
+            self.check_for_captcha(page)
+            
+            # Intentar expandir comentarios haciendo click en el área de comentarios
+            try:
+                # Buscar y hacer click en el botón de comentarios para expandirlos
+                comment_buttons = [
+                    'button[aria-label*="comment"]',
+                    'button[aria-label*="comentario"]',
+                    '.social-details-social-counts__comments',
+                    '[data-control-name="comment"]',
+                    '.comment-button',
+                    'button:has-text("comentario")',
+                    'button:has-text("comment")'
+                ]
+                for selector in comment_buttons:
+                    try:
+                        btn = page.query_selector(selector)
+                        if btn:
+                            btn.click(timeout=2000)
+                            self.random_sleep(1, 2)
+                            break
+                    except:
+                        continue
+            except:
+                pass
+            
+            # Esperar a que carguen los comentarios
+            self.random_sleep(1, 2)
+            
+            # Buscar comentarios en la página del post
+            comment_selectors = [
+                # Selectores nuevos de LinkedIn
+                '.comments-comment-item',
+                '.comments-comments-list article',
+                '[data-view-name="comments-list"] article',
+                '.feed-shared-update-v2__comments-container article',
+                # Selectores de texto de comentario
+                '.comments-comment-item__main-content',
+                '.comments-comment-texteditor',
+                # Selectores genéricos
+                'article[data-id*="comment"]',
+                '.comment-item'
+            ]
+            
+            for selector in comment_selectors:
+                try:
+                    comment_elements = page.query_selector_all(selector)
+                    if comment_elements and len(comment_elements) > 0:
+                        for comment_el in comment_elements[:max_comments]:
+                            try:
+                                # Intentar extraer texto del comentario
+                                text_el = comment_el.query_selector('.comments-comment-item__main-content') or \
+                                          comment_el.query_selector('.feed-shared-main-content') or \
+                                          comment_el.query_selector('[dir="ltr"]') or \
+                                          comment_el.query_selector('span.break-words') or \
+                                          comment_el
+                                
+                                if text_el:
+                                    comment_text = text_el.inner_text().strip()
+                                    # Limpiar: quitar saltos de línea, pipes, y limitar longitud
+                                    comment_text = comment_text.replace('\n', ' ').replace('|', '-')
+                                    # Quitar texto basura común
+                                    for trash in ['Denunciar este comentario', 'Report this comment', 'Responder', 'Reply', 'Me gusta', 'Like']:
+                                        comment_text = comment_text.replace(trash, '')
+                                    comment_text = comment_text.strip()[:300]
+                                    
+                                    # Filtrar placeholders y texto basura del UI de LinkedIn
+                                    trash_patterns = [
+                                        'Añadir un comentario',
+                                        'Add a comment',
+                                        'Abrir el teclado de emoji',
+                                        'Open emoji keyboard',
+                                        'Escribe un comentario',
+                                        'Write a comment',
+                                        'Publicar',
+                                        'Post'
+                                    ]
+                                    is_trash = any(trash.lower() in comment_text.lower() for trash in trash_patterns)
+                                    
+                                    if comment_text and len(comment_text) > 5 and not is_trash:
+                                        # Evitar duplicados
+                                        if comment_text not in comments:
+                                            comments.append(comment_text)
+                            except:
+                                continue
+                        if comments:
+                            break
+                except:
+                    continue
+            
+            # Volver a la página de búsqueda
+            page.goto(current_url, wait_until="domcontentloaded")
+            self.random_sleep(1, 2)
+            
+        except Exception as e:
+            print(f"[LinkedIn] Error extrayendo comentarios: {e}")
+            # Intentar volver a la búsqueda de todas formas
+            try:
+                page.go_back()
+                self.random_sleep(1, 2)
+            except:
+                pass
+        
+        return comments
+
+    def get_post_url(self, post, post_id):
+        """Obtener la URL del post individual de LinkedIn"""
+        try:
+            # Método 1: Buscar enlace directo al post
+            link_selectors = [
+                'a[href*="/feed/update/"]',
+                'a[href*="/posts/"]',
+                '[data-control-name="update_updateV2"] a',
+                '.feed-shared-actor__meta a'
+            ]
+            for selector in link_selectors:
+                link = post.query_selector(selector)
+                if link:
+                    href = link.get_attribute('href')
+                    if href and ('/feed/update/' in href or '/posts/' in href):
+                        if href.startswith('/'):
+                            return f"https://www.linkedin.com{href}"
+                        return href
+            
+            # Método 2: Construir URL desde el post_id (urn:li:activity:XXXX)
+            if post_id and not post_id.startswith('LI_'):
+                # El post_id ya debería ser el número de actividad
+                return f"https://www.linkedin.com/feed/update/urn:li:activity:{post_id}/"
+            
+            # Método 3: Buscar en componentkey
+            componentkey = post.get_attribute('componentkey')
+            if componentkey and 'activity:' in componentkey:
+                activity_id = componentkey.split('activity:')[-1].split('/')[0].split('Feed')[0]
+                return f"https://www.linkedin.com/feed/update/urn:li:activity:{activity_id}/"
+            
+        except Exception as e:
+            pass
+        
+        return None
 
     def check_for_captcha(self, page):
         """Verificar si hay CAPTCHA y pausar"""
@@ -171,13 +324,13 @@ class LinkedinScraper:
                 # Los posts están en div con role="listitem"
                 posts = page.query_selector_all('div[role="listitem"]')
                 
-                print(f"[LinkedIn] DEBUG: Encontrados {len(posts)} posts (selector role=listitem)")
+                # print(f"DEBUG: Encontrados {len(posts)} posts (selector role=listitem)")
                 
                 if len(posts) == 0:
                     # Fallback a otros selectores si cambia
                     posts = page.query_selector_all('.feed-shared-update-v2') or \
                             page.query_selector_all('.occludable-update')
-                    print(f"[LinkedIn] DEBUG: Encontrados {len(posts)} posts (selectores legacy)")
+                    # print(f"DEBUG: Encontrados {len(posts)} posts (selectores legacy)")
                 
                 for post in posts:
                     if self.stop_event.is_set():
@@ -256,33 +409,33 @@ class LinkedinScraper:
                              post_id = f"LI_{post_count}_{int(time.time())}"
                         
                         if post_id in self.processed_ids:
-                            # print(f"[LinkedIn] DEBUG: Post ya procesado: {post_id}")
                             continue
-
-                        # --- EXTRAER COMENTARIOS ---
-                        comments_text = ""
-                        try:
-                            # Los comentarios suelen estar en elementos con clase .comments-comment-item
-                            # Intentar buscar dentro del post actual
-                            comments = post.query_selector_all('.comments-comment-item')
-                            
-                            extracted_comments = []
-                            for comm in comments[:3]: # Limitar a 3 comentarios
-                                try:
-                                    # Texto del comentario
-                                    comm_body = comm.query_selector('.comments-comment-item__main-content')
-                                    if comm_body:
-                                        c_text = comm_body.inner_text().replace('\n', ' ').strip()
-                                        if c_text:
-                                            extracted_comments.append(c_text)
-                                except: continue
-                            
-                            if extracted_comments:
-                                comments_text = " [COMENTARIOS] " + " | ".join(extracted_comments)
-                                print(f"[LinkedIn] +{len(extracted_comments)} comentarios en post {post_id[:10]}...")
-                        except: pass
                         
-                        full_text = (text_content + comments_text).replace('\n', ' ')
+                        # Obtener URL del post para navegar y extraer comentarios
+                        post_url = self.get_post_url(post, post_id)
+                        
+                        # Extraer comentarios navegando al post individual
+                        comments = []
+                        if post_url:
+                            print(f"[LinkedIn] Extrayendo comentarios de: {post_id[:20]}...")
+                            comments = self.extract_comments_from_post_page(page, post_url, max_comments=5)
+                        else:
+                            print(f"[LinkedIn] No se pudo obtener URL del post: {post_id[:20]}...")
+                        
+                        # Limpiar texto del post
+                        post_text = text_content.replace('\n', ' ').replace('|', '-')
+                        
+                        # Limpieza de sufijos basura ("... más", "... see more")
+                        ignore_suffixes = ["... más", "... see more", "… más", "… see more", "ver más", "see more"]
+                        for suffix in ignore_suffixes:
+                            if post_text.endswith(suffix):
+                                post_text = post_text[:-len(suffix)].strip()
+                        
+                        # Formatear Data: post | comentario1 | comentario2 | ...
+                        if comments:
+                            data_content = post_text + " | " + " | ".join(comments)
+                        else:
+                            data_content = post_text
                             
                         data = {
                             'RedSocial': 'LinkedIn',
@@ -291,21 +444,13 @@ class LinkedinScraper:
                             'FechaPeticion': self.request_date,
                             'FechaPublicacion': pub_date,
                             'idPublicacion': post_id,
-                            'Data': full_text
+                            'Data': data_content
                         }
-                        
-                        # Limpieza final de sufijos basura ("... más", "... see more")
-                        # A veces quedan aunque se expanda, o si falla la expansión
-                        ignore_suffixes = ["... más", "... see more", "… más", "… see more", "ver más", "see more"]
-                        for suffix in ignore_suffixes:
-                            if data['Data'].endswith(suffix):
-                                data['Data'] = data['Data'][:-len(suffix)].strip()
-                        
                         
                         self.result_queue.put(data)
                         self.processed_ids.add(post_id)
                         post_count += 1
-                        print(f"[LinkedIn] Post extraído nuevo: {post_id[:20]}...")
+                        print(f"[LinkedIn] Post #{post_count}: {post_id[:20]}... - {len(comments)} comentarios")
                         
                         # Retraso de seguridad (Stealth Mode)
                         # Simula lectura humana entre posts
