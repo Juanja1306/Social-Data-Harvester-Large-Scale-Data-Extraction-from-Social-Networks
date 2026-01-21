@@ -257,8 +257,8 @@ class RedditScraper:
 
             # 5. Proceder a la búsqueda
             encoded_query = quote(self.query)
-            # Reddit search URL - type=posts para buscar solo posts
-            search_url = f"https://www.reddit.com/search/?q={encoded_query}&type=posts&sort=new"
+            # Reddit search URL - type=posts para buscar solo posts, sin sort para usar relevancia
+            search_url = f"https://www.reddit.com/search/?q={encoded_query}&type=posts"
             print(f"[Reddit] Navegando a búsqueda: {search_url}")
             page.goto(search_url, wait_until="domcontentloaded")
             self.random_sleep(4, 6)
@@ -372,14 +372,26 @@ class RedditScraper:
                         
                         # Extraer snippet/contenido del post (preview del texto)
                         body_content = ""
-                        # En búsqueda, el snippet está en un <a> debajo del título
-                        snippet_elem = post.query_selector('a.text-ellipsis.line-clamp-2')
-                        if snippet_elem:
-                            body_content = snippet_elem.inner_text().strip()
+                        # En búsqueda, el snippet está en un <a> con clase text-14 que va a /comments/
+                        # NO confundir con la descripción del subreddit
+                        snippet_selectors = [
+                            'a.text-14.line-clamp-2[href*="/comments/"]',
+                            'a[href*="/comments/"].line-clamp-2:not([data-testid])',
+                            'search-telemetry-tracker a[href*="/comments/"]:not([data-testid])'
+                        ]
+                        for sel in snippet_selectors:
+                            snippet_elem = post.query_selector(sel)
+                            if snippet_elem:
+                                text = snippet_elem.inner_text().strip()
+                                # Verificar que no es la descripción del subreddit
+                                # Las descripciones suelen empezar con "Bienvenido", "Un lugar", "Comunidad", etc.
+                                if text and not text.startswith(('Bienvenido', 'Un lugar', 'Comunidad', '¡Bienvenido', 'Welcome', 'This subreddit', 'A place', 'The')):
+                                    body_content = text
+                                    break
                         
                         if not body_content:
-                            # Fallback a otros selectores
-                            for sel in ['[slot="text-body"]', '.md', 'p']:
+                            # Fallback a otros selectores - evitar descripciones de subreddit
+                            for sel in ['[slot="text-body"]', '.md > p']:
                                 elem = post.query_selector(sel)
                                 if elem:
                                     text = elem.inner_text().strip()
