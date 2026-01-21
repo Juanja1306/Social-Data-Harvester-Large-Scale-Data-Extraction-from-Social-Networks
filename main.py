@@ -8,50 +8,71 @@ from datetime import datetime
 import time
 from playwright.sync_api import sync_playwright
 import queue
-from dotenv import load_dotenv
+import re
 
-# Cargar variables de entorno
-load_dotenv()
 
-def csv_writer_process(result_queue, stop_event):
-    """Proceso dedicado para escribir en CSVs separados por red social"""
+def clean_text(text):
+    """Limpia el texto: remueve emojis y caracteres no UTF-8"""
+    if not isinstance(text, str):
+        return str(text)
+    
+    # Patrón para remover emojis y símbolos especiales
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # símbolos y pictogramas
+        "\U0001F680-\U0001F6FF"  # transporte y mapas
+        "\U0001F1E0-\U0001F1FF"  # banderas
+        "\U00002702-\U000027B0"  # dingbats
+        "\U000024C2-\U0001F251"  # símbolos encerrados
+        "\U0001F900-\U0001F9FF"  # suplemento de emojis
+        "\U0001FA00-\U0001FA6F"  # símbolos de ajedrez
+        "\U0001FA70-\U0001FAFF"  # símbolos extendidos
+        "\U00002600-\U000026FF"  # símbolos misceláneos
+        "\U00002700-\U000027BF"  # dingbats
+        "\U0001F004-\U0001F0CF"  # cartas de juego
+        "]+", 
+        flags=re.UNICODE
+    )
+    
+    # Remover emojis
+    text = emoji_pattern.sub('', text)
+    
+    # Asegurar UTF-8 válido (remover caracteres problemáticos)
+    text = text.encode('utf-8', errors='ignore').decode('utf-8')
+    
+    # Limpiar espacios múltiples
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
+
+
+def csv_writer_process(result_queue, stop_event, filename="resultados.csv"):
+    """Proceso dedicado para escribir en CSV (evita condición de carrera)"""
     fieldnames = ['RedSocial', 'IDP', 'Request', 'FechaPeticion', 
                   'FechaPublicacion', 'idPublicacion', 'Data']
     
-    # Diccionario para mantener los manejadores de archivos: { 'RedSocial': (file_handle, dict_writer) }
-    file_handles = {}
+    # Verificar si el archivo existe para decidir si escribir header
+    file_exists = os.path.exists(filename) and os.path.getsize(filename) > 0
     
-    try:
+    # Modo 'a' para continuar agregando sin sobrescribir
+    with open(filename, 'a', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        
+        # Solo escribir header si el archivo es nuevo o está vacío
+        if not file_exists:
+            writer.writeheader()
+        
         while not stop_event.is_set() or not result_queue.empty():
             try:
                 data = result_queue.get(timeout=1)
-                network = data.get('RedSocial', 'Unknown')
-                
-                # Si no tenemos un archivo abierto para esta red, lo creamos
-                if network not in file_handles:
-                    filename = f"resultados_{network}.csv"
-                    # Modo 'a' para append si ya existe (o 'w' si quieres reiniciar cada vez)
-                    # El usuario pidió guardar respectivamente, asumiremos append o w según lógica original.
-                    # El original usaba 'w', así que usaremos 'w' para reiniciar por ejecución
-                    # OJO: Si hay multiples procesos escribiendo de la misma red, esto funciona porque 
-                    # solo hay un csv_writer_process centralizado.
-                    
-                    # Verificar si existe para escribir header
-                    file_exists = os.path.isfile(filename)
-                    f = open(filename, 'a', newline='', encoding='utf-8')
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    
-                    if not file_exists:
-                        writer.writeheader()
-                        
-                    file_handles[network] = (f, writer)
-                    print(f"Abierto archivo de resultados: {filename}")
-                
-                # Escribir dato
-                f, writer = file_handles[network]
-                writer.writerow(data)
-                f.flush()
-                
+                # Limpiar todos los campos de texto (UTF-8 + sin emojis)
+                cleaned_data = {
+                    key: clean_text(value) if isinstance(value, str) else value
+                    for key, value in data.items()
+                }
+                writer.writerow(cleaned_data)
+                csvfile.flush()
             except queue.Empty:
                 continue
             except Exception as e:
@@ -86,24 +107,14 @@ class ScraperGUI:
         
         ttk.Label(search_frame, text="Tema de Búsqueda:").grid(row=0, column=0, sticky="w")
         self.query_entry = ttk.Entry(search_frame, width=50)
-        self.query_entry.grid(row=0, column=1, padx=5)
+        self.query_entry.grid(row=0, column=1, padx=5, sticky="w")
         self.query_entry.insert(0, "Educacion en Estados Unidos")
         
-        # Frame de credenciales (solo lectura desde .env)
-        cred_frame = ttk.LabelFrame(self.root, text="Credenciales (.env)", padding=10)
-        cred_frame.pack(fill="x", padx=10, pady=5)
-        
-        # Obtener credenciales del .env
-        env_email = os.getenv('mail', '')
-        env_password = os.getenv('password', '')
-        
-        ttk.Label(cred_frame, text="Email:").grid(row=0, column=0, sticky="w")
-        email_display = ttk.Label(cred_frame, text=env_email if env_email else "No configurado en .env")
-        email_display.grid(row=0, column=1, padx=5, sticky="w")
-        
-        ttk.Label(cred_frame, text="Contraseña:").grid(row=1, column=0, sticky="w")
-        pass_display = ttk.Label(cred_frame, text="*" * len(env_password) if env_password else "No configurado en .env")
-        pass_display.grid(row=1, column=1, padx=5, sticky="w")
+        ttk.Label(search_frame, text="Máximo de Posts:").grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.max_posts_entry = ttk.Entry(search_frame, width=10)
+        self.max_posts_entry.grid(row=1, column=1, padx=5, sticky="w", pady=(10, 0))
+        self.max_posts_entry.insert(0, "50")
+        ttk.Label(search_frame, text="(por red social)").grid(row=1, column=2, sticky="w", pady=(10, 0))
         
         # Botones de control
         btn_frame = ttk.Frame(self.root)
@@ -140,12 +151,13 @@ class ScraperGUI:
             messagebox.showerror("Error", "Debes ingresar un tema de búsqueda")
             return
         
-        # Obtener credenciales del .env
-        email = os.getenv('mail', '').strip()
-        password = os.getenv('password', '').strip()
-        
-        if not email or not password:
-            messagebox.showerror("Error", "Credenciales no encontradas en .env\n\nCrea un archivo .env con:\nmail=tu_email\npassword=tu_contraseña")
+        # Validar max_posts
+        try:
+            max_posts = int(self.max_posts_entry.get().strip())
+            if max_posts <= 0:
+                raise ValueError()
+        except ValueError:
+            messagebox.showerror("Error", "El máximo de posts debe ser un número entero positivo")
             return
         
         self.stop_event.clear()
@@ -153,13 +165,8 @@ class ScraperGUI:
         self.stop_btn.config(state="normal")
         self.status_label.config(text="Estado: Scraping activo...")
         
-        credentials = {
-            'email': email,
-            'password': password
-        }
-        
-        # Facebook deshabilitado temporalmente
-        networks = ["LinkedIn", "Instagram"] #, "Twitter"]
+        # Redes sociales activas
+        networks = ["Reddit", "LinkedIn"]#, "Instagram"]
         
         # Iniciar proceso escritor
         self.writer_process = Process(target=csv_writer_process, 
@@ -170,16 +177,16 @@ class ScraperGUI:
         # Iniciar scrapers
         for i, network in enumerate(networks):
             p = Process(target=ScraperGUI.run_scraper, 
-                       args=(network, query, credentials, self.result_queue, self.stop_event, i))
+                       args=(network, query, max_posts, self.result_queue, self.stop_event, i))
             p.start()
             self.processes.append(p)
             self.log(f"Iniciado scraper para {network} (PID: {p.pid})")
         
-        self.log(f"Búsqueda iniciada: '{query}'")
+        self.log(f"Búsqueda iniciada: '{query}' (máx {max_posts} posts por red)")
         self.monitor_queue()
     
     @staticmethod
-    def run_scraper(network, query, credentials, result_queue, stop_event, process_id):
+    def run_scraper(network, query, max_posts, result_queue, stop_event, process_id):
         """Ejecutar scraper en proceso separado"""
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=False)
@@ -192,15 +199,15 @@ class ScraperGUI:
             try:
                 if network == "LinkedIn":
                     from process.Process_Linkedin import LinkedinScraper
-                    scraper = LinkedinScraper(query, credentials, result_queue, stop_event, process_id)
+                    scraper = LinkedinScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
-                elif network == "Twitter":
-                    from process.Process_Twitter import TwitterScraper
-                    scraper = TwitterScraper(query, credentials, result_queue, stop_event, process_id)
+                elif network == "Reddit":
+                    from process.Process_Reddit import RedditScraper
+                    scraper = RedditScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
                 elif network == "Instagram":
                     from process.Process_Instagram import InstagramScraper
-                    scraper = InstagramScraper(query, credentials, result_queue, stop_event, process_id)
+                    scraper = InstagramScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
             except Exception as e:
                 # Capturar error de importación o ejecución
@@ -238,8 +245,7 @@ class ScraperGUI:
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
         self.status_label.config(text="Estado: Detenido")
-        self.status_label.config(text="Estado: Detenido")
-        self.log("Búsqueda detenida. Datos guardados en archivos CSV separados por red social.")
+        self.log("Búsqueda detenida. Datos guardados en resultados.csv")
 
 
 if __name__ == "__main__":

@@ -6,4 +6,5 @@ resultados.csv
 resultados_LinkedIn.csv
 .venv
 *.csv
-instagram_cookies.json
+*.json
+*.html
