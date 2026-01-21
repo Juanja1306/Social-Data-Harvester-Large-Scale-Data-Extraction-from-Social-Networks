@@ -8,10 +8,7 @@ from datetime import datetime
 import time
 from playwright.sync_api import sync_playwright
 import queue
-from dotenv import load_dotenv
 
-# Cargar variables de entorno
-load_dotenv()
 
 def csv_writer_process(result_queue, stop_event, filename="resultados.csv"):
     """Proceso dedicado para escribir en CSV (evita condición de carrera)"""
@@ -52,24 +49,14 @@ class ScraperGUI:
         
         ttk.Label(search_frame, text="Tema de Búsqueda:").grid(row=0, column=0, sticky="w")
         self.query_entry = ttk.Entry(search_frame, width=50)
-        self.query_entry.grid(row=0, column=1, padx=5)
+        self.query_entry.grid(row=0, column=1, padx=5, sticky="w")
         self.query_entry.insert(0, "Educacion en Estados Unidos")
         
-        # Frame de credenciales (solo lectura desde .env)
-        cred_frame = ttk.LabelFrame(self.root, text="Credenciales (.env)", padding=10)
-        cred_frame.pack(fill="x", padx=10, pady=5)
-        
-        # Obtener credenciales del .env
-        env_email = os.getenv('mail', '')
-        env_password = os.getenv('password', '')
-        
-        ttk.Label(cred_frame, text="Email:").grid(row=0, column=0, sticky="w")
-        email_display = ttk.Label(cred_frame, text=env_email if env_email else "No configurado en .env")
-        email_display.grid(row=0, column=1, padx=5, sticky="w")
-        
-        ttk.Label(cred_frame, text="Contraseña:").grid(row=1, column=0, sticky="w")
-        pass_display = ttk.Label(cred_frame, text="*" * len(env_password) if env_password else "No configurado en .env")
-        pass_display.grid(row=1, column=1, padx=5, sticky="w")
+        ttk.Label(search_frame, text="Máximo de Posts:").grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.max_posts_entry = ttk.Entry(search_frame, width=10)
+        self.max_posts_entry.grid(row=1, column=1, padx=5, sticky="w", pady=(10, 0))
+        self.max_posts_entry.insert(0, "50")
+        ttk.Label(search_frame, text="(por red social)").grid(row=1, column=2, sticky="w", pady=(10, 0))
         
         # Botones de control
         btn_frame = ttk.Frame(self.root)
@@ -106,12 +93,13 @@ class ScraperGUI:
             messagebox.showerror("Error", "Debes ingresar un tema de búsqueda")
             return
         
-        # Obtener credenciales del .env
-        email = os.getenv('mail', '').strip()
-        password = os.getenv('password', '').strip()
-        
-        if not email or not password:
-            messagebox.showerror("Error", "Credenciales no encontradas en .env\n\nCrea un archivo .env con:\nmail=tu_email\npassword=tu_contraseña")
+        # Validar max_posts
+        try:
+            max_posts = int(self.max_posts_entry.get().strip())
+            if max_posts <= 0:
+                raise ValueError()
+        except ValueError:
+            messagebox.showerror("Error", "El máximo de posts debe ser un número entero positivo")
             return
         
         self.stop_event.clear()
@@ -119,12 +107,7 @@ class ScraperGUI:
         self.stop_btn.config(state="normal")
         self.status_label.config(text="Estado: Scraping activo...")
         
-        credentials = {
-            'email': email,
-            'password': password
-        }
-        
-        # Facebook deshabilitado temporalmente
+        # Redes sociales activas
         networks = ["Reddit", "LinkedIn"]#, "Instagram"]
         
         # Iniciar proceso escritor
@@ -136,16 +119,16 @@ class ScraperGUI:
         # Iniciar scrapers
         for i, network in enumerate(networks):
             p = Process(target=ScraperGUI.run_scraper, 
-                       args=(network, query, credentials, self.result_queue, self.stop_event, i))
+                       args=(network, query, max_posts, self.result_queue, self.stop_event, i))
             p.start()
             self.processes.append(p)
             self.log(f"Iniciado scraper para {network} (PID: {p.pid})")
         
-        self.log(f"Búsqueda iniciada: '{query}'")
+        self.log(f"Búsqueda iniciada: '{query}' (máx {max_posts} posts por red)")
         self.monitor_queue()
     
     @staticmethod
-    def run_scraper(network, query, credentials, result_queue, stop_event, process_id):
+    def run_scraper(network, query, max_posts, result_queue, stop_event, process_id):
         """Ejecutar scraper en proceso separado"""
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=False)
@@ -158,15 +141,15 @@ class ScraperGUI:
             try:
                 if network == "LinkedIn":
                     from process.Process_Linkedin import LinkedinScraper
-                    scraper = LinkedinScraper(query, credentials, result_queue, stop_event, process_id)
+                    scraper = LinkedinScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
                 elif network == "Reddit":
                     from process.Process_Reddit import RedditScraper
-                    scraper = RedditScraper(query, credentials, result_queue, stop_event, process_id)
+                    scraper = RedditScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
                 elif network == "Instagram":
                     from process.Process_Instagram import InstagramScraper
-                    scraper = InstagramScraper(query, credentials, result_queue, stop_event, process_id)
+                    scraper = InstagramScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
             except Exception as e:
                 # Capturar error de importación o ejecución
@@ -203,7 +186,6 @@ class ScraperGUI:
         self.processes.clear()
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
-        self.status_label.config(text="Estado: Detenido")
         self.status_label.config(text="Estado: Detenido")
         self.log("Búsqueda detenida. Datos guardados en resultados.csv")
 

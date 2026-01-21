@@ -6,16 +6,15 @@ import os
 
 
 class LinkedinScraper:
-    def __init__(self, search_query, credentials, result_queue, stop_event, process_id):
+    def __init__(self, search_query, result_queue, stop_event, max_posts=50):
         self.query = search_query
-        self.credentials = credentials
         self.result_queue = result_queue
         self.stop_event = stop_event
-        # Usar el PID real del proceso en lugar del índice
+        # Usar el PID real del proceso
         self.process_id = os.getpid()
         self.request_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.processed_ids = set()
-        self.max_posts = 50 # Límite por defecto
+        self.max_posts = max_posts
 
     def random_sleep(self, min_time=0.5, max_time=2.0):
         """Sleep aleatorio configurable"""

@@ -6,3 +6,5 @@ resultados.csv
 resultados_LinkedIn.csv
 .venv
 *.csv
+*.json
+*.html
