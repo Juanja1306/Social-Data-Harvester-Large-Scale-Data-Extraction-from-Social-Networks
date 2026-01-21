@@ -193,6 +193,62 @@ class RedditScraper:
         except:
             pass
 
+    def extract_comments(self, page, post_url, max_comments=5):
+        """Extraer comentarios de un post de Reddit"""
+        comments = []
+        try:
+            # Guardar URL actual
+            current_url = page.url
+            
+            # Navegar al post
+            full_url = f"https://www.reddit.com{post_url}" if post_url.startswith('/') else post_url
+            page.goto(full_url, wait_until="domcontentloaded")
+            self.random_sleep(2, 3)
+            
+            # Buscar comentarios - Reddit usa shreddit-comment o divs con data-testid
+            comment_selectors = [
+                'shreddit-comment',
+                '[data-testid="comment"]',
+                '.Comment',
+                'div[id^="t1_"]'
+            ]
+            
+            for selector in comment_selectors:
+                comment_elements = page.query_selector_all(selector)
+                if comment_elements:
+                    for i, comment_el in enumerate(comment_elements[:max_comments]):
+                        try:
+                            # Extraer texto del comentario
+                            text_el = comment_el.query_selector('[slot="comment"]') or \
+                                      comment_el.query_selector('.md') or \
+                                      comment_el.query_selector('p') or \
+                                      comment_el.query_selector('[data-testid="comment-body"]')
+                            
+                            if text_el:
+                                comment_text = text_el.inner_text().strip()
+                                # Limpiar y limitar longitud
+                                comment_text = comment_text.replace('\n', ' ').replace('|', '-')[:300]
+                                if comment_text and len(comment_text) > 3:
+                                    comments.append(comment_text)
+                        except:
+                            continue
+                    break
+            
+            # Volver a la búsqueda
+            page.goto(current_url, wait_until="domcontentloaded")
+            self.random_sleep(1, 2)
+            
+        except Exception as e:
+            print(f"[Reddit] Error extrayendo comentarios: {e}")
+            # Intentar volver a la búsqueda
+            try:
+                page.go_back()
+                self.random_sleep(1, 2)
+            except:
+                pass
+        
+        return comments
+
     def extract_post_id(self, post, fallback_count):
         """Extraer ID único del post de Reddit"""
         try:
@@ -433,6 +489,24 @@ class RedditScraper:
                                     # Extraer nombre del subreddit del href
                                     subreddit = 'r/' + sub_href.split('/r/')[-1].strip('/')
                         
+                        # Obtener URL del post para extraer comentarios
+                        post_url = None
+                        if title_link:
+                            post_url = title_link.get_attribute('href')
+                        
+                        # Extraer comentarios navegando al post
+                        comments = []
+                        if post_url:
+                            print(f"[Reddit] Extrayendo comentarios de: {post_id}...")
+                            comments = self.extract_comments(page, post_url, max_comments=5)
+                        
+                        # Formatear Data: post | comentario1 | comentario2 | ...
+                        post_text = text_content.replace('\n', ' ').replace('|', '-').strip()
+                        if comments:
+                            data_content = post_text + " | " + " | ".join(comments)
+                        else:
+                            data_content = post_text
+                        
                         data = {
                             'RedSocial': 'Reddit',
                             'IDP': self.process_id,
@@ -440,14 +514,14 @@ class RedditScraper:
                             'FechaPeticion': self.request_date,
                             'FechaPublicacion': pub_date,
                             'idPublicacion': post_id,
-                            'Data': text_content.replace('\n', ' ').strip()
+                            'Data': data_content
                         }
                         
                         self.result_queue.put(data)
                         self.processed_ids.add(post_id)
                         post_count += 1
                         new_posts_found = True
-                        print(f"[Reddit] Post #{post_count}: {post_id[:25]}... ({subreddit}) - {title_content[:40]}...")
+                        print(f"[Reddit] Post #{post_count}: {post_id[:25]}... ({subreddit}) - {len(comments)} comentarios")
                         
                         # Retraso de seguridad (Stealth Mode)
                         self.random_sleep(0.3, 1)
