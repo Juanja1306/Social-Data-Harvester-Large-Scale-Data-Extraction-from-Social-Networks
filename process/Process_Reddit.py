@@ -12,7 +12,8 @@ class RedditScraper:
         self.credentials = credentials
         self.result_queue = result_queue
         self.stop_event = stop_event
-        self.process_id = process_id
+        # Usar el PID real del proceso en lugar del índice
+        self.process_id = os.getpid()
         self.request_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.processed_ids = set()
         self.max_posts = 50  # Límite por defecto
@@ -295,7 +296,7 @@ class RedditScraper:
                     posts = page.query_selector_all('[data-testid="post-container"]') or \
                             page.query_selector_all('div[data-click-id="body"]')
                 
-                print(f"[Reddit] DEBUG: Encontrados {len(posts)} posts")
+                # print(f"[Reddit] DEBUG: Encontrados {len(posts)} posts")
                 
                 if len(posts) == 0:
                     no_new_posts_count += 1
@@ -454,7 +455,7 @@ class RedditScraper:
                         
                     except Exception as e:
                         # Errores puntuales en un post no deben parar todo
-                        print(f"[Reddit] DEBUG: Error extrayendo post: {e}")
+                        # print(f"[Reddit] DEBUG: Error extrayendo post: {e}")
                         continue
                 
                 if not new_posts_found:

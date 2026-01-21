@@ -11,7 +11,8 @@ class LinkedinScraper:
         self.credentials = credentials
         self.result_queue = result_queue
         self.stop_event = stop_event
-        self.process_id = process_id
+        # Usar el PID real del proceso en lugar del índice
+        self.process_id = os.getpid()
         self.request_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.processed_ids = set()
         self.max_posts = 50 # Límite por defecto
@@ -171,13 +172,13 @@ class LinkedinScraper:
                 # Los posts están en div con role="listitem"
                 posts = page.query_selector_all('div[role="listitem"]')
                 
-                print(f"DEBUG: Encontrados {len(posts)} posts (selector role=listitem)")
+                # print(f"DEBUG: Encontrados {len(posts)} posts (selector role=listitem)")
                 
                 if len(posts) == 0:
                     # Fallback a otros selectores si cambia
                     posts = page.query_selector_all('.feed-shared-update-v2') or \
                             page.query_selector_all('.occludable-update')
-                    print(f"DEBUG: Encontrados {len(posts)} posts (selectores legacy)")
+                    # print(f"DEBUG: Encontrados {len(posts)} posts (selectores legacy)")
                 
                 for post in posts:
                     if self.stop_event.is_set():
@@ -281,7 +282,7 @@ class LinkedinScraper:
                         self.result_queue.put(data)
                         self.processed_ids.add(post_id)
                         post_count += 1
-                        print(f"DEBUG: Post extraído nuevo: {post_id[:20]}...")
+                        # print(f"DEBUG: Post extraído nuevo: {post_id[:20]}...")
                         
                         # Retraso de seguridad (Stealth Mode)
                         # Simula lectura humana entre posts

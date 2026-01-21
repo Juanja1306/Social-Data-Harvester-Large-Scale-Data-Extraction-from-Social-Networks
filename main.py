@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 # Cargar variables de entorno
 load_dotenv()
 
-def csv_writer_process(result_queue, stop_event, filename="resultados_LinkedIn.csv"):
+def csv_writer_process(result_queue, stop_event, filename="resultados.csv"):
     """Proceso dedicado para escribir en CSV (evita condición de carrera)"""
     fieldnames = ['RedSocial', 'IDP', 'Request', 'FechaPeticion', 
                   'FechaPublicacion', 'idPublicacion', 'Data']
@@ -125,7 +125,7 @@ class ScraperGUI:
         }
         
         # Facebook deshabilitado temporalmente
-        networks = ["Reddit"]#, "LinkedIn", "Instagram"]
+        networks = ["Reddit", "LinkedIn"]#, "Instagram"]
         
         # Iniciar proceso escritor
         self.writer_process = Process(target=csv_writer_process, 
@@ -205,7 +205,7 @@ class ScraperGUI:
         self.stop_btn.config(state="disabled")
         self.status_label.config(text="Estado: Detenido")
         self.status_label.config(text="Estado: Detenido")
-        self.log("Búsqueda detenida. Datos guardados en resultados_LinkedIn.csv")
+        self.log("Búsqueda detenida. Datos guardados en resultados.csv")
 
 
 if __name__ == "__main__":
