@@ -156,7 +156,7 @@ class ScraperGUI:
         self.status_label.config(text="Estado: Scraping activo...")
         
         # Redes sociales activas
-        networks = ["Reddit", "LinkedIn"]#, "Instagram"]
+        networks = ["Reddit", "LinkedIn", "Instagram"]
         
         # Iniciar proceso escritor
         self.writer_process = Process(target=csv_writer_process, 
