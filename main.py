@@ -155,8 +155,16 @@ class ScraperGUI:
         self.stop_btn.config(state="normal")
         self.status_label.config(text="Estado: Scraping activo...")
         
+        credentials = {
+            'email': email,
+            'password': password
+        }
+        
+        # Facebook deshabilitado temporalmente
+        #networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
+        #networks = [ "Facebook"] #, "Twitter"]
         # Redes sociales activas
-        networks = ["Reddit", "LinkedIn", "Instagram"]
+        networks = ["Reddit", "LinkedIn", "Instagram", "Facebook"]
         
         # Iniciar proceso escritor
         self.writer_process = Process(target=csv_writer_process, 
@@ -191,14 +199,25 @@ class ScraperGUI:
                     from process.Process_Linkedin import LinkedinScraper
                     scraper = LinkedinScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
+                    
+                elif network == "Twitter":
+                    from process.Process_Twitter import TwitterScraper
+                    scraper = TwitterScraper(query, credentials, result_queue, stop_event, process_id)
                 elif network == "Reddit":
                     from process.Process_Reddit import RedditScraper
                     scraper = RedditScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
+                    
                 elif network == "Instagram":
                     from process.Process_Instagram import InstagramScraper
                     scraper = InstagramScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
+                    
+                elif network == "Facebook":
+                    from process.Process_Facebook import FacebookScraper
+                    scraper = FacebookScraper(query, credentials, result_queue, stop_event, process_id)
+                    scraper.run(page)
+                    
             except Exception as e:
                 # Capturar error de importación o ejecución
                 print(f"Error crítico en proceso {network}: {e}")
