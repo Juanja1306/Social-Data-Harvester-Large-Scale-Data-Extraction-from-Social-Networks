@@ -5,15 +5,15 @@ import json
 import os
 
 class FacebookScraper:
-    def __init__(self, searchQuery, userCredentials, resultQueue, stopEvent, processId):
-        self.searchQuery = searchQuery
-        self.userCredentials = userCredentials
-        self.resultQueue = resultQueue
-        self.stopEvent = stopEvent
-        self.processId = processId
-        self.requestDate = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.processedPostIdentifiers = set()
-        self.maxPostsToExtract = 50
+    def __init__(self, search_query, result_queue, stop_event, max_posts=50):
+        self.query = search_query
+        self.result_queue = result_queue
+        self.stop_event = stop_event
+        self.max_posts = max_posts
+        # Usar el PID real del proceso
+        self.process_id = os.getpid()
+        self.request_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.processed_posts = set()
 
     def executeRandomSleep(self, minimumSeconds=2.0, maximumSeconds=4.0):
         """Simula comportamiento humano para evitar bloqueos del WAF"""
@@ -43,7 +43,7 @@ class FacebookScraper:
         print("[Facebook] --- ESPERANDO INICIO DE SESIÓN MANUAL ---")
         maxRetries = 300 
         for i in range(maxRetries):
-            if self.stopEvent.is_set():
+            if self.stop_event.is_set():
                 return False
             try:
                 # Verificamos si estamos en el feed o con sesión iniciada
@@ -70,7 +70,7 @@ class FacebookScraper:
                 self.saveSessionCookies(browserPage)
 
             # Buscamos el tema
-            cleanQuery = self.searchQuery.replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
+            cleanQuery = self.query.replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
             searchUrl = f"https://www.facebook.com/search/posts/?q={cleanQuery}"
             
             print(f"[Facebook] Navegando a: {searchUrl}")
@@ -78,14 +78,23 @@ class FacebookScraper:
             self.executeRandomSleep(6, 9) # Damos más tiempo de carga inicial
 
             extractedCount = 0
-            while not self.stopEvent.is_set() and extractedCount < self.maxPostsToExtract:
-                # [cite_start]1. Bajamos el scroll para forzar la carga de datos dinámicos [cite: 17, 47]
-                browserPage.evaluate("window.scrollBy(0, window.innerHeight)")
-                self.executeRandomSleep(4, 6)
+            stallCounter = 0  # Contador de iteraciones sin progreso
+            maxStallIterations = 5  # Máximo de iteraciones sin progreso
+            maxIterations = 100  # Timeout de seguridad
+            iteration = 0
+            
+            while not self.stop_event.is_set() and extractedCount < self.max_posts and iteration < maxIterations:
+                iteration += 1
+                previousCount = extractedCount
+                
+                # Scroll más agresivo - hacer múltiples scrolls
+                for _ in range(3):
+                    browserPage.evaluate("window.scrollBy(0, window.innerHeight)")
+                    time.sleep(0.5)
+                
+                self.executeRandomSleep(2, 4)
 
-                # 2. SELECTOR EXPERIMENTAL: 
-                # Buscamos divs que tengan una profundidad específica o atributos de "feed"
-                # Si 'role=article' falla, buscamos contenedores de texto de posts
+                # Buscar posts con múltiples selectores
                 potentialPosts = browserPage.query_selector_all('div[role="article"]')
                 
                 if len(potentialPosts) == 0:
@@ -93,42 +102,75 @@ class FacebookScraper:
                     potentialPosts = browserPage.query_selector_all('div[data-testid="post_message"]') or \
                                      browserPage.query_selector_all('div[data-ad-comet-preview="message"]')
 
-                print(f"[Facebook] DEBUG: Candidatos encontrados en pantalla: {len(potentialPosts)}")
+                print(f"[Facebook] Iteración {iteration}: {len(potentialPosts)} candidatos encontrados")
 
+                postsProcessedThisIteration = 0
                 for post in potentialPosts:
-                    if self.stopEvent.is_set() or extractedCount >= self.maxPostsToExtract:
+                    if self.stop_event.is_set() or extractedCount >= self.max_posts:
                         break
                     
                     try:
                         # Extraemos todo el texto visible del bloque
                         rawText = post.inner_text().strip()
                         
+                        # Debug: mostrar preview del texto
+                        textPreview = rawText[:100].replace('\n', ' ')
+                        
                         # Filtramos mensajes de sistema o textos muy cortos
-                        if len(rawText) < 40 or "Se incluyen los resultados" in rawText:
+                        if len(rawText) < 40:
+                            print(f"[Facebook] ⊘ Filtrado por longitud ({len(rawText)} chars): {textPreview}...")
+                            continue
+                            
+                        if "Se incluyen los resultados" in rawText:
+                            print(f"[Facebook] ⊘ Filtrado por texto del sistema: {textPreview}...")
                             continue
 
-                        # [cite_start]Generamos el ID basado en los primeros 150 caracteres para unicidad [cite: 17]
+                        # Generamos el ID basado en los primeros 150 caracteres para unicidad
                         postId = str(hash(rawText[:150]))
 
-                        if postId not in self.processedPostIdentifiers:
+                        if postId not in self.processed_posts:
                             dataPayload = {
                                 'RedSocial': 'Facebook',
-                                'IDP': self.processId,
-                                'Request': self.searchQuery,
-                                'FechaPeticion': self.requestDate,
+                                'IDP': self.process_id,
+                                'Request': self.query,
+                                'FechaPeticion': self.request_date,
                                 'FechaPublicacion': "N/A",
                                 'idPublicacion': postId,
                                 'Data': rawText.replace('\n', ' ')[:2200]
                             }
                             
-                            # [cite_start]Enviamos a la cola para que el main.py lo escriba en el CSV [cite: 17, 30]
-                            self.resultQueue.put(dataPayload)
-                            self.processedPostIdentifiers.add(postId)
+                            # Enviamos a la cola para que el main.py lo escriba en el CSV
+                            self.result_queue.put(dataPayload)
+                            self.processed_posts.add(postId)
                             extractedCount += 1
-                            print(f"[Facebook] ✓ ¡ÉXITO! Post extraído: {postId[:8]}")
+                            postsProcessedThisIteration += 1
+                            print(f"[Facebook] ✓ ¡ÉXITO! Post {extractedCount}/{self.max_posts} extraído: {postId[:8]}")
+                            print(f"[Facebook]   Preview: {textPreview}...")
                             self.executeRandomSleep(1, 2)
-                    except:
+                        else:
+                            print(f"[Facebook] ⊘ Post duplicado (ya procesado): {postId[:8]}")
+                            
+                    except Exception as e:
+                        print(f"[Facebook] ⚠ Error extrayendo post: {type(e).__name__}: {str(e)}")
                         continue
+                
+                # Detección de estancamiento
+                if extractedCount == previousCount:
+                    stallCounter += 1
+                    print(f"[Facebook] ⚠ Sin progreso en esta iteración ({stallCounter}/{maxStallIterations})")
+                    if stallCounter >= maxStallIterations:
+                        print(f"[Facebook] ⊗ Saliendo: sin progreso después de {maxStallIterations} iteraciones")
+                        break
+                else:
+                    stallCounter = 0  # Reset si hubo progreso
+                    
+            # Mensajes de finalización
+            if iteration >= maxIterations:
+                print(f"[Facebook] ⊗ Timeout alcanzado después de {maxIterations} iteraciones")
+            if extractedCount >= self.max_posts:
+                print(f"[Facebook] ✓ Límite de {self.max_posts} posts alcanzado")
+            
+            print(f"[Facebook] Finalizado: {extractedCount} posts extraídos en {iteration} iteraciones")
                         
         except Exception as error:
             print(f"[Facebook] Error crítico en ejecución: {error}")

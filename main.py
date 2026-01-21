@@ -155,11 +155,6 @@ class ScraperGUI:
         self.stop_btn.config(state="normal")
         self.status_label.config(text="Estado: Scraping activo...")
         
-        credentials = {
-            'email': email,
-            'password': password
-        }
-        
         # Facebook deshabilitado temporalmente
         #networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
         #networks = [ "Facebook"] #, "Twitter"]
@@ -200,9 +195,11 @@ class ScraperGUI:
                     scraper = LinkedinScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
                     
-                elif network == "Twitter":
-                    from process.Process_Twitter import TwitterScraper
-                    scraper = TwitterScraper(query, credentials, result_queue, stop_event, process_id)
+                # Twitter deshabilitado - archivo no existe
+                # elif network == "Twitter":
+                #     from process.Process_Twitter import TwitterScraper
+                #     scraper = TwitterScraper(query, result_queue, stop_event, max_posts)
+                #     scraper.run(page)
                 elif network == "Reddit":
                     from process.Process_Reddit import RedditScraper
                     scraper = RedditScraper(query, result_queue, stop_event, max_posts)
@@ -215,7 +212,7 @@ class ScraperGUI:
                     
                 elif network == "Facebook":
                     from process.Process_Facebook import FacebookScraper
-                    scraper = FacebookScraper(query, credentials, result_queue, stop_event, process_id)
+                    scraper = FacebookScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
                     
             except Exception as e:
