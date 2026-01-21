@@ -123,13 +123,6 @@ graph TB
     M --> P[nlp_outputs/]
     N --> P
     O --> P
-    
-    style A fill:#e1f5ff
-    style B fill:#fff3e0
-    style C fill:#f3e5f5
-    style J fill:#e8f5e9
-    style K fill:#fce4ec
-    style P fill:#fff9c4
 ```
 
 ### Process Flow
