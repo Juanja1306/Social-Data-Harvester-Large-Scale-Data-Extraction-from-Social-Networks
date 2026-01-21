@@ -8,6 +8,43 @@ from datetime import datetime
 import time
 from playwright.sync_api import sync_playwright
 import queue
+import re
+
+
+def clean_text(text):
+    """Limpia el texto: remueve emojis y caracteres no UTF-8"""
+    if not isinstance(text, str):
+        return str(text)
+    
+    # Patrón para remover emojis y símbolos especiales
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # símbolos y pictogramas
+        "\U0001F680-\U0001F6FF"  # transporte y mapas
+        "\U0001F1E0-\U0001F1FF"  # banderas
+        "\U00002702-\U000027B0"  # dingbats
+        "\U000024C2-\U0001F251"  # símbolos encerrados
+        "\U0001F900-\U0001F9FF"  # suplemento de emojis
+        "\U0001FA00-\U0001FA6F"  # símbolos de ajedrez
+        "\U0001FA70-\U0001FAFF"  # símbolos extendidos
+        "\U00002600-\U000026FF"  # símbolos misceláneos
+        "\U00002700-\U000027BF"  # dingbats
+        "\U0001F004-\U0001F0CF"  # cartas de juego
+        "]+", 
+        flags=re.UNICODE
+    )
+    
+    # Remover emojis
+    text = emoji_pattern.sub('', text)
+    
+    # Asegurar UTF-8 válido (remover caracteres problemáticos)
+    text = text.encode('utf-8', errors='ignore').decode('utf-8')
+    
+    # Limpiar espacios múltiples
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
 
 
 def csv_writer_process(result_queue, stop_event, filename="resultados.csv"):
@@ -15,15 +52,26 @@ def csv_writer_process(result_queue, stop_event, filename="resultados.csv"):
     fieldnames = ['RedSocial', 'IDP', 'Request', 'FechaPeticion', 
                   'FechaPublicacion', 'idPublicacion', 'Data']
     
-    # Modo 'w' para sobreescribir/reiniciar archivo en cada ejecución
-    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+    # Verificar si el archivo existe para decidir si escribir header
+    file_exists = os.path.exists(filename) and os.path.getsize(filename) > 0
+    
+    # Modo 'a' para continuar agregando sin sobrescribir
+    with open(filename, 'a', newline='', encoding='utf-8') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
+        
+        # Solo escribir header si el archivo es nuevo o está vacío
+        if not file_exists:
+            writer.writeheader()
         
         while not stop_event.is_set() or not result_queue.empty():
             try:
                 data = result_queue.get(timeout=1)
-                writer.writerow(data)
+                # Limpiar todos los campos de texto (UTF-8 + sin emojis)
+                cleaned_data = {
+                    key: clean_text(value) if isinstance(value, str) else value
+                    for key, value in data.items()
+                }
+                writer.writerow(cleaned_data)
                 csvfile.flush()
             except queue.Empty:
                 continue
