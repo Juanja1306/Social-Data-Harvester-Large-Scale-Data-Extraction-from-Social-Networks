@@ -10,6 +10,14 @@ from playwright.sync_api import sync_playwright
 import queue
 import re
 
+# Agregar esto al inicio de main.py
+try:
+    
+    from LLM.sentiment_analyzer_facebook import start_gemini_analysis
+except ImportError as e:
+    print(f"[Debug] Error al importar el analizador: {e}")
+    pass
+
 
 def clean_text(text):
     """Limpia el texto: remueve emojis y caracteres no UTF-8"""
@@ -126,6 +134,9 @@ class ScraperGUI:
         # Status
         self.status_label = ttk.Label(self.root, text="Estado: Inactivo", relief="sunken")
         self.status_label.pack(fill="x", padx=10, pady=5)
+        
+        #? Gemini boton
+        self.button_Analize_Gemini_Fellings()
     
     def log(self, message):
         """Agregar mensaje al log"""
@@ -157,9 +168,9 @@ class ScraperGUI:
         
         # Facebook deshabilitado temporalmente
         #networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
-        #networks = [ "Facebook"] #, "Twitter"]
+        networks = [ "Facebook"] #, "Twitter"]
         # Redes sociales activas
-        networks = ["Reddit", "LinkedIn", "Instagram", "Facebook"]
+        #networks = ["Reddit", "LinkedIn", "Instagram", "Facebook"]
         
         # Iniciar proceso escritor
         self.writer_process = Process(target=csv_writer_process, 
@@ -253,6 +264,23 @@ class ScraperGUI:
         self.status_label.config(text="Estado: Detenido")
         self.log("Búsqueda detenida. Datos guardados en resultados.csv")
 
+    #? Gemini AI
+    def run_gemini_logic(self):
+        """Ejecuta el análisis y muestra el resultado en el log"""
+        self.log("Iniciando análisis de sentimientos con Gemini...")
+        # Ejecutar la lógica del archivo externo
+        mensaje = start_gemini_analysis("resultados.csv")
+        self.log(mensaje)
+        messagebox.showinfo("Gemini AI", mensaje)
+
+    def button_Analize_Gemini_Fellings(self):
+        """Crea el botón en la interfaz. Comenta esta función en setup_ui para quitarlo."""
+        # Creamos un frame extra para no mover los botones de tus compañeros
+        ai_frame = ttk.LabelFrame(self.root, text="Inteligencia Artificial (Práctica 07)", padding=5)
+        ai_frame.pack(fill="x", padx=10, pady=5)
+        
+        btn = ttk.Button(ai_frame, text="Analizar Sentimientos (Gemini)", command=self.run_gemini_logic)
+        btn.pack(pady=5)
 
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
