@@ -10,14 +10,6 @@ from playwright.sync_api import sync_playwright
 import queue
 import re
 
-# Agregar esto al inicio de main.py
-try:
-    
-    from LLM.sentiment_analyzer_facebook import start_gemini_analysis
-except ImportError as e:
-    print(f"[Debug] Error al importar el analizador: {e}")
-    pass
-
 
 def clean_text(text):
     """Limpia el texto: remueve emojis y caracteres no UTF-8"""
@@ -91,9 +83,8 @@ def run_llm_process(network, result_queue):
     """
     try:
         if network == "Facebook":
-            from LLM.sentiment_analyzer_facebook import start_gemini_analysis
-            # Llamamos a la función que ya creamos en el paso anterior
-            reporte = start_gemini_analysis("resultados.csv")
+            from LLM.sentiment_analyzer_facebook import start_facebook_analysis
+            reporte = start_facebook_analysis("resultados.csv")
             result_queue.put((network, reporte))
             
         if network == "Instagram":
@@ -199,8 +190,9 @@ class ScraperGUI:
         self.status_label.config(text="Estado: Scraping activo...")
         
         # Facebook deshabilitado temporalmente
-        networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
+        #networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
         # Redes sociales activas
+        networks = ["Facebook"] #, "Twitter"]
         #networks = ["Reddit", "LinkedIn", "Instagram", "Facebook"]
         
         # Iniciar proceso escritor
@@ -223,7 +215,8 @@ class ScraperGUI:
     
     def start_llm_analysis(self):
         """Inicia el análisis de LLMs en paralelo"""
-        LLMs = ["LinkedIn", "Instagram"]  # Procesamiento concurrente 
+        #LLMs = ["LinkedIn", "Instagram"]  # Procesamiento concurrente 
+        LLMs = ["Facebook"]  # Procesamiento concurrente 
         
         if not os.path.exists("resultados.csv"):
             messagebox.showerror("Error", "No existe resultados.csv para analizar")
