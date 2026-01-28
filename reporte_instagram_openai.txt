@@ -2,47 +2,47 @@
         ======================================================================
         REPORTE DE ANÁLISIS DE SENTIMIENTOS - INSTAGRAM (OpenAI)
         ======================================================================
-        Fecha de Análisis: 2026-01-28 12:55:25
+        Fecha de Análisis: 2026-01-28 14:44:17
         Modelo Utilizado: gpt-4o-mini
         Modo de Procesamiento: Concurrente (máx 10 tareas)
 
         ======================================================================
         📊 ESTADÍSTICAS DE ELEMENTOS ANALIZADOS
         ======================================================================
-        Total de Publicaciones (Filas CSV): 34
-        Total de Posts Analizados: 34
-        Total de Comentarios Analizados: 305
+        Total de Publicaciones (Filas CSV): 50
+        Total de Posts Analizados: 50
+        Total de Comentarios Analizados: 474
         ──────────────────────────────────────────────────────────────
-        TOTAL DE ELEMENTOS ANALIZADOS: 339
+        TOTAL DE ELEMENTOS ANALIZADOS: 524
         (Posts + Comentarios)
 
         ======================================================================
         📊 DISTRIBUCIÓN DE SENTIMIENTOS
         ======================================================================
-        Basado en TODOS los elementos analizados (339 elementos):
+        Basado en TODOS los elementos analizados (524 elementos):
 
-        • Positivo: 81 (23.89%)
-        • Negativo: 174 (51.33%)
-        • Neutral:  84 (24.78%)
+        • Positivo: 189 (36.07%)
+        • Negativo: 60 (11.45%)
+        • Neutral:  275 (52.48%)
         • Error:    0 (0.0%)
 
         ======================================================================
         ⚡ MÉTRICAS DE RENDIMIENTO
         ======================================================================
-        Tiempo Total de Procesamiento: 40.9383 segundos
-        Tiempo Promedio por Publicación: 1.2041 segundos
-        Tiempo Mediano por Publicación (acumulado): 32.4762 segundos
-        Tiempo Mínimo (acumulado): 2.1230 segundos
-        Tiempo Máximo (acumulado): 40.9348 segundos
+        Tiempo Total de Procesamiento: 67.3561 segundos
+        Tiempo Promedio por Publicación: 1.3471 segundos
+        Tiempo Mediano por Publicación (acumulado): 35.7527 segundos
+        Tiempo Mínimo (acumulado): 3.5861 segundos
+        Tiempo Máximo (acumulado): 67.3532 segundos
 
-        Tiempo Total Acumulado por Publicación: 968.6828 segundos
+        Tiempo Total Acumulado por Publicación: 1741.4367 segundos
 
-        Tiempo Total en Llamadas API: 6925.5044 segundos
-        Tiempo Promedio por Llamada API: 20.4897 segundos
-        Total de Llamadas API: 338
+        Tiempo Total en Llamadas API: 17667.1587 segundos
+        Tiempo Promedio por Llamada API: 33.7160 segundos
+        Total de Llamadas API: 524
 
-        Throughput: 0.8305 publicaciones/segundo
-        Throughput de Elementos: 8.2808 elementos/segundo
+        Throughput: 0.7423 publicaciones/segundo
+        Throughput de Elementos: 7.7795 elementos/segundo
 
         ======================================================================
         ✅ Resultados completos guardados en: analisis_instagram_completo.json
