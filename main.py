@@ -97,20 +97,24 @@ def run_llm_process(network, result_queue):
             result_queue.put((network, reporte))
             
         if network == "Instagram":
-            # TODO: Compañero de Instagram agregar lógica aquí
             from LLM.sentiment_analyzer_instagram import start_instagram_analysis
             reporte = start_instagram_analysis("resultados.csv")
             result_queue.put((network, reporte))
-            pass
             
         elif network == "LinkedIn":
             from LLM.sentiment_analyzer_linkedin import start_linkedin_analysis
             # Llamamos a la función de análisis concurrente de LinkedIn con DeepSeek
             reporte = start_linkedin_analysis("resultados.csv")
             result_queue.put((network, reporte))
+
+        elif network == "Twitter":
+            # Nuevo análisis de sentimientos para Twitter usando Grok (xAI)
+            from LLM.sentiment_analyzer_twitter_grok import start_twitter_grok_analysis
+            reporte = start_twitter_grok_analysis("resultados.csv")
+            result_queue.put((network, reporte))
             
         elif network == "Reddit":
-            # TODO: Compañero de Reddit agregar lógica aquí
+            # Futuro: agregar analizador específico para Reddit si se requiere
             pass
 
     except Exception as e:
@@ -198,10 +202,9 @@ class ScraperGUI:
         self.stop_btn.config(state="normal")
         self.status_label.config(text="Estado: Scraping activo...")
         
-        # Facebook deshabilitado temporalmente
-        networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
-        # Redes sociales activas
-        #networks = ["Reddit", "LinkedIn", "Instagram", "Facebook"]
+        # Redes sociales activas para scraping
+        # networks = ["LinkedIn", "Instagram", "Facebook", "Twitter"]
+        networks = ["Twitter"]
         
         # Iniciar proceso escritor
         self.writer_process = Process(target=csv_writer_process, 
@@ -223,7 +226,9 @@ class ScraperGUI:
     
     def start_llm_analysis(self):
         """Inicia el análisis de LLMs en paralelo"""
-        LLMs = ["LinkedIn", "Instagram"]  # Procesamiento concurrente 
+        # Ahora soporta LinkedIn (DeepSeek), Instagram (OpenAI) y Twitter (Grok)
+        # LLMs = ["LinkedIn", "Instagram", "Twitter"]  # Procesamiento concurrente 
+        LLMs = ["Twitter"]
         
         if not os.path.exists("resultados.csv"):
             messagebox.showerror("Error", "No existe resultados.csv para analizar")
@@ -326,11 +331,10 @@ class ScraperGUI:
                     scraper = LinkedinScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
                     
-                # Twitter deshabilitado - archivo no existe
-                # elif network == "Twitter":
-                #     from process.Process_Twitter import TwitterScraper
-                #     scraper = TwitterScraper(query, result_queue, stop_event, max_posts)
-                #     scraper.run(page)
+                elif network == "Twitter":
+                    from process.Process_Twitter import TwitterScraper
+                    scraper = TwitterScraper(query, result_queue, stop_event, max_posts)
+                    scraper.run(page)
                 elif network == "Reddit":
                     from process.Process_Reddit import RedditScraper
                     scraper = RedditScraper(query, result_queue, stop_event, max_posts)
