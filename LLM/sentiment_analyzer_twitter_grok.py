@@ -28,8 +28,8 @@ client = AsyncOpenAI(
 )
 
 # Modelo de Grok a utilizar.
-# En la API actual de xAI, el modelo válido para chat/completions suele ser "grok-2-mini".
-MODELO = "grok-2-mini"
+# Usamos "grok-4", que es el modelo estándar que aparece en la documentación oficial.
+MODELO = "grok-4"
 ARCHIVO_RESULTADOS_JSON = "analisis_twitter_grok_completo.json"
 ARCHIVO_REPORTE = "reporte_twitter_grok.txt"
 
