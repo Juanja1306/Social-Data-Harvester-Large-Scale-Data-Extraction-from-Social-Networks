@@ -84,6 +84,35 @@ def csv_writer_process(result_queue, stop_event, filename="resultados.csv"):
             except queue.Empty:
                 continue
 
+# TODO: Funcion para ejecutar los LLMs de cada red social
+def run_llm_process(network, result_queue):
+    """
+    Proceso paralelo para ejecutar los LLMs de cada red social.
+    """
+    try:
+        if network == "Facebook":
+            from LLM.sentiment_analyzer_facebook import start_gemini_analysis
+            # Llamamos a la función que ya creamos en el paso anterior
+            reporte = start_gemini_analysis("resultados.csv")
+            result_queue.put((network, reporte))
+            
+        elif network == "Instagram":
+            # TODO: Compañero de Instagram agregar lógica aquí
+            # from LLM.sentiment_analyzer_instagram import start_instagram_analysis
+            # reporte = start_instagram_analysis("resultados.csv")
+            pass
+            
+        elif network == "LinkedIn":
+            # TODO: Compañero de LinkedIn agregar lógica aquí
+            pass
+            
+        elif network == "Reddit":
+            # TODO: Compañero de Reddit agregar lógica aquí
+            pass
+
+    except Exception as e:
+        result_queue.put((network, f"Error crítico en LLM {network}: {e}"))
+
 
 class ScraperGUI:
     def __init__(self, root):
@@ -136,7 +165,7 @@ class ScraperGUI:
         self.status_label.pack(fill="x", padx=10, pady=5)
         
         #? Gemini boton
-        self.button_Analize_Gemini_Fellings()
+        self.button_Analize_Fellings()
     
     def log(self, message):
         """Agregar mensaje al log"""
@@ -188,6 +217,55 @@ class ScraperGUI:
         
         self.log(f"Búsqueda iniciada: '{query}' (máx {max_posts} posts por red)")
         self.monitor_queue()
+    
+    
+    def start_llm_analysis(self):
+        """Inicia el análisis de LLMs en paralelo"""
+        LLMs = ["Facebook"] 
+        
+        if not os.path.exists("resultados.csv"):
+            messagebox.showerror("Error", "No existe resultados.csv para analizar")
+            return
+
+        self.log("Iniciando análisis de sentimientos (LLM) en paralelo...")
+        
+        self.llm_queue = Queue()
+        self.active_llm_processes = 0
+
+        for network in LLMs:
+            # --- CORRECCIÓN AQUÍ ---
+            # 1. target=run_llm_process (la función externa, SIN self)
+            # 2. args=(network, self.llm_queue) (pasamos la COLA, no la función)
+            p = Process(target=run_llm_process, args=(network, self.llm_queue))
+            p.start()
+            self.processes.append(p)
+            self.active_llm_processes += 1
+            self.log(f"🚀 Iniciado proceso LLM para: {network}")
+        
+        self.root.after(500, self.monitor_llm_queue)
+    
+    def monitor_llm_queue(self):
+        """Revisa si llegaron reportes de los LLMs"""
+        try:
+            while not self.llm_queue.empty():
+                network, reporte = self.llm_queue.get_nowait()
+                self.active_llm_processes -= 1
+                
+                self.log(f"✅ Análisis finalizado: {network}")
+                
+                if reporte:
+                    messagebox.showinfo(f"Reporte Gemini - {network}", reporte)
+            
+            if self.active_llm_processes > 0:
+                self.root.after(500, self.monitor_llm_queue)
+            else:
+                self.log("Todos los análisis LLM han terminado.")
+
+        except queue.Empty:
+            pass
+        except Exception as e:
+            print(f"Error en monitor LLM: {e}")
+            
     
     @staticmethod
     def run_scraper(network, query, max_posts, result_queue, stop_event, process_id):
@@ -264,23 +342,18 @@ class ScraperGUI:
         self.status_label.config(text="Estado: Detenido")
         self.log("Búsqueda detenida. Datos guardados en resultados.csv")
 
-    #? Gemini AI
-    def run_gemini_logic(self):
-        """Ejecuta el análisis y muestra el resultado en el log"""
-        self.log("Iniciando análisis de sentimientos con Gemini...")
-        # Ejecutar la lógica del archivo externo
-        mensaje = start_gemini_analysis("resultados.csv")
-        self.log(mensaje)
-        messagebox.showinfo("Gemini AI", mensaje)
 
-    def button_Analize_Gemini_Fellings(self):
-        """Crea el botón en la interfaz. Comenta esta función en setup_ui para quitarlo."""
-        # Creamos un frame extra para no mover los botones de tus compañeros
+    def button_Analize_Fellings(self):
+        """Crea el botón en la interfaz. Comenta esta función en setup_ui para quitarlo."""        
+        
         ai_frame = ttk.LabelFrame(self.root, text="Inteligencia Artificial (Práctica 07)", padding=5)
         ai_frame.pack(fill="x", padx=10, pady=5)
         
-        btn = ttk.Button(ai_frame, text="Analizar Sentimientos (Gemini)", command=self.run_gemini_logic)
+        # CAMBIO AQUÍ: command=self.start_llm_analysis
+        btn = ttk.Button(ai_frame, text="Analizar Sentimientos (Gemini)", command=self.start_llm_analysis)
         btn.pack(pady=5)
+
+
 
 if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
