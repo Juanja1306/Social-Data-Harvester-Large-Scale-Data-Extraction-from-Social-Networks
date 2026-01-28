@@ -424,22 +424,25 @@ class ScraperGUI:
             with open(filepath, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
-                    if line.startswith("• Positivo:"):
-                        num = line.split(":")[1].split("(")[0].strip()
-                        counts["Positivo"] = int(num)
-                    elif line.startswith("• Negativo:"):
-                        num = line.split(":")[1].split("(")[0].strip()
-                        counts["Negativo"] = int(num)
-                    elif line.startswith("• Neutral:"):
-                        num = line.split(":")[1].split("(")[0].strip()
-                        counts["Neutral"] = int(num)
-                    elif line.startswith("• Error:"):
-                        num = line.split(":")[1].split("(")[0].strip()
-                        try:
-                            counts["Error"] = int(num)
-                        except ValueError:
-                            # Algunos reportes pueden no tener Error explícito
-                            counts["Error"] = 0
+                    # Acepta formatos:
+                    # • Positivo: 10 (..%)
+                    # • Errores:  2 (..%)
+                    # Positivo: 10
+                    m = re.match(r"^[•\-\*]?\s*(Positivo|Negativo|Neutral|Error|Errores)\s*:\s*(\d+)", line, re.IGNORECASE)
+                    if not m:
+                        continue
+
+                    label = m.group(1).strip().lower()
+                    value = int(m.group(2))
+
+                    if label == "positivo":
+                        counts["Positivo"] = value
+                    elif label == "negativo":
+                        counts["Negativo"] = value
+                    elif label == "neutral":
+                        counts["Neutral"] = value
+                    elif label in ("error", "errores"):
+                        counts["Error"] = value
         except Exception as e:
             self.log(f"[Gráficas] Error leyendo {filepath}: {e}")
             return None
@@ -462,24 +465,24 @@ class ScraperGUI:
             with open(filepath, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
-                    if "Tiempo Total de Procesamiento:" in line:
-                        # Extraer el número antes de "segundos"
-                        parts = line.split(":")
-                        if len(parts) > 1:
-                            num_str = parts[1].split("segundos")[0].strip()
-                            try:
-                                times["tiempo_total"] = float(num_str)
-                            except ValueError:
-                                pass
-                    elif "Tiempo Promedio por Publicación:" in line:
-                        # Extraer el número antes de "segundos"
-                        parts = line.split(":")
-                        if len(parts) > 1:
-                            num_str = parts[1].split("segundos")[0].strip()
-                            try:
-                                times["tiempo_promedio"] = float(num_str)
-                            except ValueError:
-                                pass
+                    # Twitter/Instagram/LinkedIn:
+                    #   Tiempo Total de Procesamiento: 123.45 segundos
+                    # Facebook:
+                    #   Tiempo Total: 2.97s
+                    #   Tiempo Promedio/Post: 2.97s
+                    m_total = re.search(r"Tiempo Total(?: de Procesamiento)?\s*:\s*([0-9]+(?:\.[0-9]+)?)", line, re.IGNORECASE)
+                    if m_total:
+                        try:
+                            times["tiempo_total"] = float(m_total.group(1))
+                        except ValueError:
+                            pass
+
+                    m_avg = re.search(r"Tiempo Promedio(?: por Publicación)?(?:/Post)?\s*:\s*([0-9]+(?:\.[0-9]+)?)", line, re.IGNORECASE)
+                    if m_avg:
+                        try:
+                            times["tiempo_promedio"] = float(m_avg.group(1))
+                        except ValueError:
+                            pass
         except Exception as e:
             self.log(f"[Gráficas] Error leyendo tiempos de {filepath}: {e}")
             return None
@@ -496,6 +499,7 @@ class ScraperGUI:
             ("Instagram", "reporte_instagram_openai.txt"),
             ("LinkedIn", "reporte_linkedin_deepseek.txt"),
             ("Twitter", "reporte_twitter_grok.txt"),
+            ("Facebook", "reporte_facebook_gemini.txt"),
         ]
 
         datos_sentimientos = []
@@ -594,6 +598,7 @@ class ScraperGUI:
             ("Instagram", "analisis_instagram_completo.json"),
             ("LinkedIn", "analisis_linkedin_completo.json"),
             ("Twitter", "analisis_twitter_grok_completo.json"),
+            ("Facebook", "analisis_facebook_completo.json"),
         ]
 
         ventana = tk.Toplevel(self.root)
