@@ -9,6 +9,10 @@ import time
 from playwright.sync_api import sync_playwright
 import queue
 import re
+import json
+
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
 def clean_text(text):
@@ -88,20 +92,24 @@ def run_llm_process(network, result_queue):
             result_queue.put((network, reporte))
             
         if network == "Instagram":
-            # TODO: Compañero de Instagram agregar lógica aquí
             from LLM.sentiment_analyzer_instagram import start_instagram_analysis
             reporte = start_instagram_analysis("resultados.csv")
             result_queue.put((network, reporte))
-            pass
             
         elif network == "LinkedIn":
             from LLM.sentiment_analyzer_linkedin import start_linkedin_analysis
             # Llamamos a la función de análisis concurrente de LinkedIn con DeepSeek
             reporte = start_linkedin_analysis("resultados.csv")
             result_queue.put((network, reporte))
+
+        elif network == "Twitter":
+            # Nuevo análisis de sentimientos para Twitter usando Grok (xAI)
+            from LLM.sentiment_analyzer_twitter_grok import start_twitter_grok_analysis
+            reporte = start_twitter_grok_analysis("resultados.csv")
+            result_queue.put((network, reporte))
             
         elif network == "Reddit":
-            # TODO: Compañero de Reddit agregar lógica aquí
+            # Futuro: agregar analizador específico para Reddit si se requiere
             pass
 
     except Exception as e:
@@ -191,9 +199,10 @@ class ScraperGUI:
         
         # Facebook deshabilitado temporalmente
         #networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
-        # Redes sociales activas
-        networks = ["Facebook"] #, "Twitter"]
-        #networks = ["Reddit", "LinkedIn", "Instagram", "Facebook"]
+        # Redes sociales activas        
+        # Redes sociales activas para scraping
+        networks = ["LinkedIn", "Instagram", "Facebook", "Twitter"]
+        # networks = ["Twitter"]
         
         # Iniciar proceso escritor
         self.writer_process = Process(target=csv_writer_process, 
@@ -214,9 +223,10 @@ class ScraperGUI:
     
     
     def start_llm_analysis(self):
-        """Inicia el análisis de LLMs en paralelo"""
-        #LLMs = ["LinkedIn", "Instagram"]  # Procesamiento concurrente 
-        LLMs = ["Facebook"]  # Procesamiento concurrente 
+        """Inicia el análisis de LLMs en paralelo"""        
+        # Ahora soporta LinkedIn (DeepSeek), Instagram (OpenAI) y Twitter (Grok)
+        LLMs = ["LinkedIn", "Instagram", "Twitter", "Facebook"]  # Procesamiento concurrente 
+        # LLMs = ["Twitter"]
         
         if not os.path.exists("resultados.csv"):
             messagebox.showerror("Error", "No existe resultados.csv para analizar")
@@ -319,11 +329,10 @@ class ScraperGUI:
                     scraper = LinkedinScraper(query, result_queue, stop_event, max_posts)
                     scraper.run(page)
                     
-                # Twitter deshabilitado - archivo no existe
-                # elif network == "Twitter":
-                #     from process.Process_Twitter import TwitterScraper
-                #     scraper = TwitterScraper(query, result_queue, stop_event, max_posts)
-                #     scraper.run(page)
+                elif network == "Twitter":
+                    from process.Process_Twitter import TwitterScraper
+                    scraper = TwitterScraper(query, result_queue, stop_event, max_posts)
+                    scraper.run(page)
                 elif network == "Reddit":
                     from process.Process_Reddit import RedditScraper
                     scraper = RedditScraper(query, result_queue, stop_event, max_posts)
@@ -384,9 +393,293 @@ class ScraperGUI:
         ai_frame = ttk.LabelFrame(self.root, text="Inteligencia Artificial (Práctica 07)", padding=5)
         ai_frame.pack(fill="x", padx=10, pady=5)
         
-        # CAMBIO AQUÍ: command=self.start_llm_analysis
-        btn = ttk.Button(ai_frame, text="Analizar Sentimientos (AI)", command=self.start_llm_analysis)
-        btn.pack(pady=5)
+        # Botón para lanzar análisis de sentimientos
+        btn_analisis = ttk.Button(ai_frame, text="Analizar Sentimientos (AI)", command=self.start_llm_analysis)
+        btn_analisis.pack(side="left", padx=5, pady=5)
+
+        # Botón para ver gráficas agregadas de los reportes
+        btn_graficas = ttk.Button(ai_frame, text="Ver Gráficas", command=self.view_graphs)
+        btn_graficas.pack(side="left", padx=5, pady=5)
+
+        # Botón para ver tablas detalladas de cada publicación
+        btn_detalles = ttk.Button(ai_frame, text="Ver Detalles", command=self.view_details)
+        btn_detalles.pack(side="left", padx=5, pady=5)
+
+    # ------------------------------------------------------------------
+    # FUNCIONES AUXILIARES PARA LLM: GRÁFICAS Y DETALLES
+    # ------------------------------------------------------------------
+
+    def _parse_report_counts(self, filepath, nombre_red):
+        """
+        Lee un archivo de reporte de texto y extrae los conteos de
+        Positivo / Negativo / Neutral / Error.
+        Devuelve dict o None si el archivo no existe.
+        """
+        if not os.path.exists(filepath):
+            self.log(f"[Gráficas] No se encontró el reporte de {nombre_red}: {filepath}")
+            return None
+
+        counts = {"Positivo": 0, "Negativo": 0, "Neutral": 0, "Error": 0}
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("• Positivo:"):
+                        num = line.split(":")[1].split("(")[0].strip()
+                        counts["Positivo"] = int(num)
+                    elif line.startswith("• Negativo:"):
+                        num = line.split(":")[1].split("(")[0].strip()
+                        counts["Negativo"] = int(num)
+                    elif line.startswith("• Neutral:"):
+                        num = line.split(":")[1].split("(")[0].strip()
+                        counts["Neutral"] = int(num)
+                    elif line.startswith("• Error:"):
+                        num = line.split(":")[1].split("(")[0].strip()
+                        try:
+                            counts["Error"] = int(num)
+                        except ValueError:
+                            # Algunos reportes pueden no tener Error explícito
+                            counts["Error"] = 0
+        except Exception as e:
+            self.log(f"[Gráficas] Error leyendo {filepath}: {e}")
+            return None
+
+        return counts
+
+    def _parse_report_times(self, filepath, nombre_red):
+        """
+        Lee un archivo de reporte de texto y extrae las métricas de tiempo:
+        - Tiempo Total de Procesamiento
+        - Tiempo Promedio por Publicación
+        Devuelve dict con estos valores o None si el archivo no existe.
+        """
+        if not os.path.exists(filepath):
+            self.log(f"[Gráficas] No se encontró el reporte de {nombre_red}: {filepath}")
+            return None
+
+        times = {"tiempo_total": 0.0, "tiempo_promedio": 0.0}
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if "Tiempo Total de Procesamiento:" in line:
+                        # Extraer el número antes de "segundos"
+                        parts = line.split(":")
+                        if len(parts) > 1:
+                            num_str = parts[1].split("segundos")[0].strip()
+                            try:
+                                times["tiempo_total"] = float(num_str)
+                            except ValueError:
+                                pass
+                    elif "Tiempo Promedio por Publicación:" in line:
+                        # Extraer el número antes de "segundos"
+                        parts = line.split(":")
+                        if len(parts) > 1:
+                            num_str = parts[1].split("segundos")[0].strip()
+                            try:
+                                times["tiempo_promedio"] = float(num_str)
+                            except ValueError:
+                                pass
+        except Exception as e:
+            self.log(f"[Gráficas] Error leyendo tiempos de {filepath}: {e}")
+            return None
+
+        return times
+
+    def view_graphs(self):
+        """
+        Abre una ventana con gráficas de barras comparando
+        sentimientos por red social (Instagram, LinkedIn, Twitter),
+        tiempo promedio por publicación y tiempo total de procesamiento.
+        """
+        redes = [
+            ("Instagram", "reporte_instagram_openai.txt"),
+            ("LinkedIn", "reporte_linkedin_deepseek.txt"),
+            ("Twitter", "reporte_twitter_grok.txt"),
+        ]
+
+        datos_sentimientos = []
+        datos_tiempos = []
+        
+        for nombre, archivo in redes:
+            stats = self._parse_report_counts(archivo, nombre)
+            if stats:
+                datos_sentimientos.append((nombre, stats))
+            
+            times = self._parse_report_times(archivo, nombre)
+            if times:
+                datos_tiempos.append((nombre, times))
+
+        if not datos_sentimientos and not datos_tiempos:
+            messagebox.showerror("Error", "No se encontraron reportes de LLM para generar gráficas.")
+            return
+
+        # Crear figura con 3 subplots
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+        fig.suptitle("Análisis de Sentimientos y Rendimiento por Red Social", fontsize=14, fontweight="bold")
+
+        # Gráfica 1: Distribución de sentimientos
+        if datos_sentimientos:
+            sentimientos = ["Positivo", "Negativo", "Neutral", "Error"]
+            x = list(range(len(sentimientos)))
+            width = 0.2
+
+            for idx, (nombre, stats) in enumerate(datos_sentimientos):
+                valores = [stats.get(s, 0) for s in sentimientos]
+                posiciones = [i + idx * width for i in x]
+                axes[0].bar(posiciones, valores, width=width, label=nombre)
+
+            axes[0].set_xticks([i + width for i in x])
+            axes[0].set_xticklabels(sentimientos)
+            axes[0].set_ylabel("Número de elementos")
+            axes[0].set_title("Distribución de Sentimientos")
+            axes[0].legend()
+            axes[0].grid(axis="y", linestyle="--", alpha=0.3)
+
+        # Gráfica 2: Tiempo Promedio por Publicación
+        if datos_tiempos:
+            nombres = [nombre for nombre, _ in datos_tiempos]
+            tiempos_promedio = [times["tiempo_promedio"] for _, times in datos_tiempos]
+            
+            bars = axes[1].bar(nombres, tiempos_promedio, color=['#FF6B6B', '#4ECDC4', '#45B7D1'])
+            axes[1].set_ylabel("Tiempo (segundos)")
+            axes[1].set_title("Tiempo Promedio por Publicación")
+            axes[1].grid(axis="y", linestyle="--", alpha=0.3)
+            
+            # Agregar valores en las barras
+            for bar, valor in zip(bars, tiempos_promedio):
+                height = bar.get_height()
+                axes[1].text(bar.get_x() + bar.get_width()/2., height,
+                           f'{valor:.2f}s',
+                           ha='center', va='bottom', fontsize=9)
+
+        # Gráfica 3: Tiempo Total de Procesamiento
+        if datos_tiempos:
+            nombres = [nombre for nombre, _ in datos_tiempos]
+            tiempos_totales = [times["tiempo_total"] for _, times in datos_tiempos]
+            
+            bars = axes[2].bar(nombres, tiempos_totales, color=['#FF6B6B', '#4ECDC4', '#45B7D1'])
+            axes[2].set_ylabel("Tiempo (segundos)")
+            axes[2].set_title("Tiempo Total de Procesamiento")
+            axes[2].grid(axis="y", linestyle="--", alpha=0.3)
+            
+            # Agregar valores en las barras
+            for bar, valor in zip(bars, tiempos_totales):
+                height = bar.get_height()
+                axes[2].text(bar.get_x() + bar.get_width()/2., height,
+                           f'{valor:.2f}s',
+                           ha='center', va='bottom', fontsize=9)
+
+        plt.tight_layout()
+
+        # Ventana de Tkinter para incrustar la figura
+        ventana = tk.Toplevel(self.root)
+        ventana.title("Gráficas de Sentimientos y Rendimiento (LLM)")
+        ventana.geometry("1200x500")
+
+        canvas = FigureCanvasTkAgg(fig, master=ventana)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        # Mantener referencia para evitar que el GC destruya la figura
+        ventana.canvas = canvas
+        ventana.figure = fig
+
+    def view_details(self):
+        """
+        Abre una ventana con tablas (Treeview) mostrando detalles de
+        cada publicación analizada en los JSON de resultados.
+        """
+        archivos = [
+            ("Instagram", "analisis_instagram_completo.json"),
+            ("LinkedIn", "analisis_linkedin_completo.json"),
+            ("Twitter", "analisis_twitter_grok_completo.json"),
+        ]
+
+        ventana = tk.Toplevel(self.root)
+        ventana.title("Detalles de Análisis (LLM)")
+        ventana.geometry("900x500")
+
+        notebook = ttk.Notebook(ventana)
+        notebook.pack(fill="both", expand=True)
+
+        tabs_creados = 0
+
+        for nombre, archivo in archivos:
+            if not os.path.exists(archivo):
+                self.log(f"[Detalles] No se encontró archivo: {archivo}")
+                continue
+
+            try:
+                with open(archivo, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as e:
+                self.log(f"[Detalles] Error leyendo {archivo}: {e}")
+                continue
+
+            if not isinstance(data, list) or not data:
+                continue
+
+            frame = ttk.Frame(notebook)
+            notebook.add(frame, text=nombre)
+            tabs_creados += 1
+
+            columnas = ("id", "sent_general", "sent_post", "total_com", "total_anal")
+            tree = ttk.Treeview(
+                frame,
+                columns=columnas,
+                show="headings",
+                height=20,
+            )
+
+            tree.heading("id", text="ID Publicación")
+            tree.heading("sent_general", text="Sent. General")
+            tree.heading("sent_post", text="Sent. Post")
+            tree.heading("total_com", text="# Comentarios")
+            tree.heading("total_anal", text="# Coment. Analizados")
+
+            tree.column("id", width=260, anchor="w")
+            tree.column("sent_general", width=100, anchor="center")
+            tree.column("sent_post", width=100, anchor="center")
+            tree.column("total_com", width=110, anchor="center")
+            tree.column("total_anal", width=140, anchor="center")
+
+            vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+            tree.configure(yscrollcommand=vsb.set)
+
+            tree.grid(row=0, column=0, sticky="nsew")
+            vsb.grid(row=0, column=1, sticky="ns")
+
+            frame.rowconfigure(0, weight=1)
+            frame.columnconfigure(0, weight=1)
+
+            # Limitar filas para no saturar la interfaz (ej. primeras 300)
+            max_rows = 300
+            for idx, item in enumerate(data):
+                if idx >= max_rows:
+                    break
+
+                id_pub = item.get("idPublicacion", "")
+                sent_general = item.get("sentimiento_general", "")
+
+                analisis_post = item.get("analisis_post") or {}
+                sent_post = analisis_post.get("sentimiento", "")
+
+                total_com = item.get("total_comentarios", 0)
+                total_anal = item.get("total_analizados", 0)
+
+                tree.insert(
+                    "",
+                    "end",
+                    values=(id_pub, sent_general, sent_post, total_com, total_anal),
+                )
+
+        if tabs_creados == 0:
+            ventana.destroy()
+            messagebox.showerror(
+                "Error",
+                "No se encontraron archivos JSON de análisis para mostrar detalles.",
+            )
 
 
 
