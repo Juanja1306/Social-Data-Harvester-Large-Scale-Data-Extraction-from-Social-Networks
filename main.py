@@ -197,7 +197,7 @@ class ScraperGUI:
         
         # Facebook deshabilitado temporalmente
         #networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
-        networks = [ "Facebook"] #, "Twitter"]
+        networks = [ "Instagram"] #, "Twitter"]
         # Redes sociales activas
         #networks = ["Reddit", "LinkedIn", "Instagram", "Facebook"]
         
