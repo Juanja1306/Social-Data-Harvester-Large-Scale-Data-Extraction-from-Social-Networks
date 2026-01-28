@@ -14,14 +14,6 @@ import json
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-# Agregar esto al inicio de main.py
-try:
-    
-    from LLM.sentiment_analyzer_facebook import start_gemini_analysis
-except ImportError as e:
-    print(f"[Debug] Error al importar el analizador: {e}")
-    pass
-
 
 def clean_text(text):
     """Limpia el texto: remueve emojis y caracteres no UTF-8"""
@@ -95,9 +87,8 @@ def run_llm_process(network, result_queue):
     """
     try:
         if network == "Facebook":
-            from LLM.sentiment_analyzer_facebook import start_gemini_analysis
-            # Llamamos a la función que ya creamos en el paso anterior
-            reporte = start_gemini_analysis("resultados.csv")
+            from LLM.sentiment_analyzer_facebook import start_facebook_analysis
+            reporte = start_facebook_analysis("resultados.csv")
             result_queue.put((network, reporte))
             
         if network == "Instagram":
@@ -206,6 +197,9 @@ class ScraperGUI:
         self.stop_btn.config(state="normal")
         self.status_label.config(text="Estado: Scraping activo...")
         
+        # Facebook deshabilitado temporalmente
+        #networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
+        # Redes sociales activas        
         # Redes sociales activas para scraping
         networks = ["LinkedIn", "Instagram", "Facebook", "Twitter"]
         # networks = ["Twitter"]
@@ -229,9 +223,9 @@ class ScraperGUI:
     
     
     def start_llm_analysis(self):
-        """Inicia el análisis de LLMs en paralelo"""
+        """Inicia el análisis de LLMs en paralelo"""        
         # Ahora soporta LinkedIn (DeepSeek), Instagram (OpenAI) y Twitter (Grok)
-        LLMs = ["LinkedIn", "Instagram", "Twitter"]  # Procesamiento concurrente 
+        LLMs = ["LinkedIn", "Instagram", "Twitter", "Facebook"]  # Procesamiento concurrente 
         # LLMs = ["Twitter"]
         
         if not os.path.exists("resultados.csv"):
