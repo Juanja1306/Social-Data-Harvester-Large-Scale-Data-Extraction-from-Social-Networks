@@ -2,45 +2,47 @@
         ======================================================================
         REPORTE DE ANÁLISIS DE SENTIMIENTOS - LINKEDIN (DeepSeek)
         ======================================================================
-        Fecha de Análisis: 2026-01-28 00:24:38
+        Fecha de Análisis: 2026-01-28 12:55:16
         Modelo Utilizado: deepseek-chat
         Modo de Procesamiento: Concurrente (máx 10 tareas)
 
         ======================================================================
         📊 ESTADÍSTICAS DE ELEMENTOS ANALIZADOS
         ======================================================================
-        Total de Publicaciones (Filas CSV): 5
-        Total de Posts Analizados: 5
-        Total de Comentarios Analizados: 0
+        Total de Publicaciones (Filas CSV): 101
+        Total de Posts Analizados: 101
+        Total de Comentarios Analizados: 30
         ──────────────────────────────────────────────────────────────
-        TOTAL DE ELEMENTOS ANALIZADOS: 5
+        TOTAL DE ELEMENTOS ANALIZADOS: 131
           (Posts + Comentarios)
 
         ======================================================================
         📊 DISTRIBUCIÓN DE SENTIMIENTOS
         ======================================================================
-        Basado en TODOS los elementos analizados (5 elementos):
+        Basado en TODOS los elementos analizados (131 elementos):
 
-        • Positivo: 5 (100.0%)
+        • Positivo: 80 (61.07%)
         • Negativo: 0 (0.0%)
-        • Neutral:  0 (0.0%)
+        • Neutral:  51 (38.93%)
         • Error:    0 (0.0%)
 
         ======================================================================
         ⚡ MÉTRICAS DE RENDIMIENTO
         ======================================================================
-        Tiempo Total de Procesamiento: 16.73 segundos
-        Tiempo Promedio por Publicación: 3.345 segundos
-        Tiempo Mediano por Publicación: 3.282 segundos
-        Tiempo Mínimo: 3.281 segundos
-        Tiempo Máximo: 3.483 segundos
+        Tiempo Total de Procesamiento: 33.0919 segundos
+        Tiempo Promedio por Publicación: 0.3276 segundos
+        Tiempo Mediano por Publicación (acumulado): 17.2854 segundos
+        Tiempo Mínimo (acumulado): 3.4001 segundos
+        Tiempo Máximo (acumulado): 33.0899 segundos
 
-        Tiempo Total en Llamadas API: 15.94 segundos
-        Tiempo Promedio por Llamada API: 3.189 segundos
-        Total de Llamadas API: 5
+        Tiempo Total Acumulado por Publicación: 1781.9198 segundos
 
-        Throughput: 0.30 publicaciones/segundo
-        Throughput de Elementos: 0.30 elementos/segundo
+        Tiempo Total en Llamadas API: 2244.8625 segundos
+        Tiempo Promedio por Llamada API: 17.1364 segundos
+        Total de Llamadas API: 131
+
+        Throughput: 3.0521 publicaciones/segundo
+        Throughput de Elementos: 3.9587 elementos/segundo
 
         ======================================================================
         📈 ANÁLISIS COMPARATIVO
@@ -50,7 +52,7 @@
         • Reducción de tiempo estimada vs secuencial: ~0.0%
 
         Capacidad de Clasificación a Gran Escala:
-        • Total de elementos analizados: 5 (Posts: 5 + Comentarios: 0)
+        • Total de elementos analizados: 131 (Posts: 101 + Comentarios: 30)
         • Tasa de éxito: 100.0%
 
         ======================================================================

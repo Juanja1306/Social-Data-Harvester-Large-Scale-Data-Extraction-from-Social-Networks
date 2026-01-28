@@ -31,6 +31,7 @@ SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 # Métricas de rendimiento
 tiempos_procesamiento = []
 tiempos_api = []
+tiempo_total_wallclock = 0.0
 
 
 def clean_text(text: str) -> str:
@@ -295,6 +296,7 @@ async def procesar_linkedin_concurrente(csv_file: str = "resultados.csv") -> Lis
     print(f"[LinkedIn] Procesando {len(publicaciones)} publicaciones de forma concurrente...")
     print(f"[LinkedIn] Concurrencia máxima: {MAX_CONCURRENT_TASKS} tareas simultáneas")
     
+    global tiempo_total_wallclock
     inicio_total = time.time()
     
     # Procesar todas las publicaciones concurrentemente
@@ -307,6 +309,7 @@ async def procesar_linkedin_concurrente(csv_file: str = "resultados.csv") -> Lis
     resultados_validos = [r for r in resultados if not isinstance(r, Exception)]
     
     tiempo_total = time.time() - inicio_total
+    tiempo_total_wallclock = tiempo_total
     
     print(f"[LinkedIn] Procesamiento completado en {tiempo_total:.2f} segundos")
     print(f"[LinkedIn] Publicaciones procesadas: {len(resultados_validos)}/{len(publicaciones)}")
@@ -369,19 +372,25 @@ def generar_reporte(resultados: List[Dict]) -> str:
     porcentajes = {k: round((v/total_elementos)*100, 2) if total_elementos > 0 else 0 for k, v in stats.items()}
     
     # Métricas de rendimiento
+    # En modo concurrente, sum(tiempos_procesamiento) NO representa el tiempo real
+    # transcurrido (wall-clock). Para eso usamos tiempo_total_wallclock.
     if tiempos_procesamiento:
-        tiempo_promedio = statistics.mean(tiempos_procesamiento)
+        tiempo_acumulado_proc = sum(tiempos_procesamiento)
         tiempo_mediano = statistics.median(tiempos_procesamiento)
         tiempo_min = min(tiempos_procesamiento)
         tiempo_max = max(tiempos_procesamiento)
     else:
-        tiempo_promedio = tiempo_mediano = tiempo_min = tiempo_max = 0
-    
+        tiempo_acumulado_proc = 0.0
+        tiempo_mediano = tiempo_min = tiempo_max = 0.0
+
+    tiempo_total_proc = float(tiempo_total_wallclock or 0.0)
+    tiempo_promedio = (tiempo_total_proc / total_publicaciones) if total_publicaciones else 0.0
+
     if tiempos_api:
         tiempo_api_promedio = statistics.mean(tiempos_api)
         tiempo_api_total = sum(tiempos_api)
     else:
-        tiempo_api_promedio = tiempo_api_total = 0
+        tiempo_api_promedio = tiempo_api_total = 0.0
     
     # Generar reporte
     reporte = f"""
@@ -415,25 +424,27 @@ def generar_reporte(resultados: List[Dict]) -> str:
         {'='*70}
         ⚡ MÉTRICAS DE RENDIMIENTO
         {'='*70}
-        Tiempo Total de Procesamiento: {sum(tiempos_procesamiento):.2f} segundos
-        Tiempo Promedio por Publicación: {tiempo_promedio:.3f} segundos
-        Tiempo Mediano por Publicación: {tiempo_mediano:.3f} segundos
-        Tiempo Mínimo: {tiempo_min:.3f} segundos
-        Tiempo Máximo: {tiempo_max:.3f} segundos
+        Tiempo Total de Procesamiento: {tiempo_total_proc:.4f} segundos
+        Tiempo Promedio por Publicación: {tiempo_promedio:.4f} segundos
+        Tiempo Mediano por Publicación (acumulado): {tiempo_mediano:.4f} segundos
+        Tiempo Mínimo (acumulado): {tiempo_min:.4f} segundos
+        Tiempo Máximo (acumulado): {tiempo_max:.4f} segundos
 
-        Tiempo Total en Llamadas API: {tiempo_api_total:.2f} segundos
-        Tiempo Promedio por Llamada API: {tiempo_api_promedio:.3f} segundos
+        Tiempo Total Acumulado por Publicación: {tiempo_acumulado_proc:.4f} segundos
+
+        Tiempo Total en Llamadas API: {tiempo_api_total:.4f} segundos
+        Tiempo Promedio por Llamada API: {tiempo_api_promedio:.4f} segundos
         Total de Llamadas API: {len(tiempos_api)}
 
-        Throughput: {total_publicaciones / sum(tiempos_procesamiento) if tiempos_procesamiento else 0:.2f} publicaciones/segundo
-        Throughput de Elementos: {total_elementos / sum(tiempos_procesamiento) if tiempos_procesamiento else 0:.2f} elementos/segundo
+        Throughput: {total_publicaciones / tiempo_total_proc if tiempo_total_proc else 0:.4f} publicaciones/segundo
+        Throughput de Elementos: {total_elementos / tiempo_total_proc if tiempo_total_proc else 0:.4f} elementos/segundo
 
         {'='*70}
         📈 ANÁLISIS COMPARATIVO
         {'='*70}
         Eficiencia del Procesamiento Concurrente:
         • Publicaciones procesadas simultáneamente: hasta {MAX_CONCURRENT_TASKS}
-        • Reducción de tiempo estimada vs secuencial: ~{round((1 - (tiempo_promedio * total_publicaciones) / sum(tiempos_procesamiento)) * 100, 1) if tiempos_procesamiento and total_publicaciones > 0 else 0}%
+        • Reducción de tiempo estimada vs secuencial: ~{round((1 - (tiempo_promedio * total_publicaciones) / tiempo_total_proc) * 100, 1) if tiempo_total_proc and total_publicaciones > 0 else 0}%
 
         Capacidad de Clasificación a Gran Escala:
         • Total de elementos analizados: {total_elementos} (Posts: {total_posts} + Comentarios: {total_comentarios_analizados})
@@ -458,11 +469,12 @@ def start_linkedin_analysis(csv_file: str = "resultados.csv") -> str:
     Returns:
         String con el reporte de análisis
     """
-    global tiempos_procesamiento, tiempos_api
+    global tiempos_procesamiento, tiempos_api, tiempo_total_wallclock
     
     # Reiniciar métricas
     tiempos_procesamiento = []
     tiempos_api = []
+    tiempo_total_wallclock = 0.0
     
     print("\n" + "="*70)
     print("INICIANDO ANÁLISIS DE SENTIMIENTOS - LINKEDIN (DeepSeek)")
