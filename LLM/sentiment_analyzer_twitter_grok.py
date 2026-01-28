@@ -40,6 +40,7 @@ SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 # Métricas
 tiempos_procesamiento: List[float] = []
 tiempos_api: List[float] = []
+tiempo_total_wallclock: float = 0.0
 
 
 def clean_text(text: str) -> str:
@@ -289,6 +290,7 @@ async def procesar_twitter_concurrente(csv_file: str = "resultados.csv") -> List
 
     print(f"[Twitter-Grok] Procesando {len(publicaciones)} publicaciones con Grok (concurrencia: {MAX_CONCURRENT_TASKS})...")
 
+    global tiempo_total_wallclock
     inicio_total = time.time()
     resultados = await asyncio.gather(
         *[procesar_publicacion_twitter(pub) for pub in publicaciones],
@@ -297,6 +299,7 @@ async def procesar_twitter_concurrente(csv_file: str = "resultados.csv") -> List
 
     resultados_validos = [r for r in resultados if not isinstance(r, Exception)]
     tiempo_total = time.time() - inicio_total
+    tiempo_total_wallclock = tiempo_total
 
     print(f"[Twitter-Grok] Procesamiento completado en {tiempo_total:.2f} segundos.")
     print(f"[Twitter-Grok] Publicaciones procesadas: {len(resultados_validos)}/{len(publicaciones)}")
@@ -354,19 +357,29 @@ def generar_reporte(resultados: List[Dict]) -> str:
         for k, v in stats.items()
     }
 
+    # En modo concurrente, sum(tiempos_procesamiento) NO representa el tiempo real
+    # transcurrido (wall-clock). Para eso usamos tiempo_total_wallclock, medido
+    # alrededor del asyncio.gather en procesar_twitter_concurrente.
     if tiempos_procesamiento:
-        tiempo_promedio = statistics.mean(tiempos_procesamiento)
+        tiempo_acumulado_proc = sum(tiempos_procesamiento)
         tiempo_mediano = statistics.median(tiempos_procesamiento)
         tiempo_min = min(tiempos_procesamiento)
         tiempo_max = max(tiempos_procesamiento)
     else:
-        tiempo_promedio = tiempo_mediano = tiempo_min = tiempo_max = 0
+        tiempo_acumulado_proc = 0.0
+        tiempo_mediano = tiempo_min = tiempo_max = 0.0
 
+    # Promedio “real” por publicación basado en wall-clock (si está disponible)
+    tiempo_total_proc = float(tiempo_total_wallclock or 0.0)
+    tiempo_promedio = (tiempo_total_proc / total_publicaciones) if total_publicaciones else 0.0
+
+    # Tiempos de API son acumulados por llamada (pueden exceder el wall-clock)
     if tiempos_api:
-        tiempo_api_promedio = statistics.mean(tiempos_api)
         tiempo_api_total = sum(tiempos_api)
+        tiempo_api_promedio = statistics.mean(tiempos_api)
     else:
-        tiempo_api_promedio = tiempo_api_total = 0
+        tiempo_api_total = 0.0
+        tiempo_api_promedio = 0.0
 
     reporte = f"""
 {'='*70}
@@ -397,14 +410,16 @@ TOTAL DE ELEMENTOS ANALIZADOS: {total_elementos}
 {'='*70}
 ⚡ MÉTRICAS DE RENDIMIENTO
 {'='*70}
-Tiempo Total de Procesamiento: {sum(tiempos_procesamiento) if tiempos_procesamiento else 0:.2f} segundos
-Tiempo Promedio por Publicación: {tiempo_promedio:.3f} segundos
-Tiempo Mediano por Publicación: {tiempo_mediano:.3f} segundos
-Tiempo Mínimo: {tiempo_min:.3f} segundos
-Tiempo Máximo: {tiempo_max:.3f} segundos
+Tiempo Total de Procesamiento: {tiempo_total_proc:.4f} segundos
+Tiempo Promedio por Publicación: {tiempo_promedio:.4f} segundos
+Tiempo Mediano por Publicación (acumulado): {tiempo_mediano:.4f} segundos
+Tiempo Mínimo (acumulado): {tiempo_min:.4f} segundos
+Tiempo Máximo (acumulado): {tiempo_max:.4f} segundos
 
-Tiempo Total en Llamadas API: {tiempo_api_total:.2f} segundos
-Tiempo Promedio por Llamada API: {tiempo_api_promedio:.3f} segundos
+Tiempo Total Acumulado por Publicación: {tiempo_acumulado_proc:.4f} segundos
+
+Tiempo Total en Llamadas API: {tiempo_api_total:.4f} segundos
+Tiempo Promedio por Llamada API: {tiempo_api_promedio:.4f} segundos
 Total de Llamadas API: {len(tiempos_api)}
 
 {'='*70}
@@ -422,9 +437,10 @@ def start_twitter_grok_analysis(csv_file: str = "resultados.csv") -> str:
     - Lanza el procesamiento concurrente con Grok.
     - Guarda JSON y TXT, y devuelve el texto del reporte.
     """
-    global tiempos_procesamiento, tiempos_api
+    global tiempos_procesamiento, tiempos_api, tiempo_total_wallclock
     tiempos_procesamiento = []
     tiempos_api = []
+    tiempo_total_wallclock = 0.0
 
     print("\n" + "=" * 70)
     print("INICIANDO ANÁLISIS DE SENTIMIENTOS - TWITTER/X (Grok - xAI)")
