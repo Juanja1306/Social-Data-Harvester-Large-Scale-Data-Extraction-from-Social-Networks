@@ -7,6 +7,7 @@ from typing import List, Dict
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+import statistics
 
 # --- CONFIGURACIÓN ---
 load_dotenv(os.path.join(os.getcwd(), '.env'))
@@ -17,30 +18,30 @@ client = genai.Client(api_key=api_key) if api_key else None
 ARCHIVO_RESULTADOS_JSON = "analisis_facebook_completo.json"
 ARCHIVO_REPORTE = "reporte_facebook_gemini.txt"
 
-# PRUEBA UNITARIA (1 SOLO POST)
-MAX_POSTS_A_PROCESAR = 1 
+# CONFIGURACIÓN DE PROCESAMIENTO
+# Ahora que funciona, si quieres analizar MÁS de 1, cambia este número (ej: 5 o 10)
+MAX_POSTS_A_PROCESAR = 5 
 TIEMPO_ENTRE_PETICIONES = 2 
 
-# Lista de Candidatos (Basada en tu lista anterior)
-# El script probará uno por uno hasta que uno funcione.
+# LISTA DE MODELOS A PROBAR (Auto-Descubrimiento)
 MODELOS_CANDIDATOS = [
-    "gemini-2.0-flash",       # Estándar rápido
-    "gemini-2.0-flash-001",   # Versión estable específica
-    "gemini-2.5-flash",       # Lo más nuevo (a veces tiene cuota libre)
-    "gemini-pro-latest",      # El viejo confiable (si todo lo nuevo falla)
-    "gemini-1.5-flash-latest" # Respaldo final
+    "gemini-2.5-flash",       # El que te funcionó
+    "gemini-2.0-flash-lite-001",
+    "gemini-2.0-flash",       
+    "gemini-1.5-flash",       
+    "gemini-pro"
 ]
 
-# Variable global que guardará el modelo ganador
+# Variable global para guardar el modelo que funcionó
 MODELO_ACTIVO = None 
 
-# Métricas
+# Métricas Globales
 tiempos_procesamiento = []
 tiempos_api = []
 
 def clean_text(text: str) -> str:
     if not isinstance(text, str): return ""
-    return " ".join(text.split())[:1000]
+    return " ".join(text.split())[:1500]
 
 def parse_facebook_data(data_str: str) -> Dict[str, List[str]]:
     if not isinstance(data_str, str) or not data_str.strip():
@@ -55,8 +56,7 @@ def parse_facebook_data(data_str: str) -> Dict[str, List[str]]:
 
 def buscar_modelo_funcional():
     """
-    RUTINA DE AUTO-REPARACIÓN:
-    Prueba modelos de la lista hasta encontrar uno que NO dé error 429/404.
+    Prueba modelos de la lista hasta encontrar uno que funcione.
     """
     global MODELO_ACTIVO
     print("\n🔍 BUSCANDO MODELO DISPONIBLE (Auto-Discovery)...")
@@ -81,15 +81,15 @@ def buscar_modelo_funcional():
             if "429" in error_msg:
                 print(" ❌ Saturado (429)")
             elif "404" in error_msg:
-                print(" ❌ No encontrado (404)")
+                print(" ❌ No encontrado")
             else:
-                print(f" ❌ Error: {error_msg[:20]}...")
+                print(f" ❌ Error: {error_msg[:15]}...")
     
-    print("\n❌ FATAL: Ningún modelo funcionó. Tu API Key podría estar inválida o bloqueada globalmente.")
+    print("\n❌ FATAL: Ningún modelo funcionó.")
     return False
 
 def analizar_sentimiento_dinamico(texto: str, tipo: str = "contenido") -> Dict:
-    """Usa el MODELO_ACTIVO que encontramos en la fase de búsqueda."""
+    """Usa el MODELO_ACTIVO descubierto."""
     if not texto or len(texto) < 2:
         return {'sentimiento': 'Neutral', 'explicacion': 'Vacío', 'tipo': tipo, 'tiempo_api': 0}
     
@@ -100,7 +100,7 @@ def analizar_sentimiento_dinamico(texto: str, tipo: str = "contenido") -> Dict:
             Responde JSON: {{"sentimiento": "Positivo", "Negativo" o "Neutral", "explicacion": "max 5 palabras"}}"""
 
         response = client.models.generate_content(
-            model=MODELO_ACTIVO, # Usamos el ganador
+            model=MODELO_ACTIVO, 
             contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json")
         )
@@ -128,7 +128,7 @@ def analizar_sentimiento_dinamico(texto: str, tipo: str = "contenido") -> Dict:
         }
 
 def procesar_facebook_secuencial(csv_file: str = "resultados.csv") -> List[Dict]:
-    # 1. PRIMERO ENCONTRAMOS UN MODELO QUE SIRVA
+    # 1. Encontrar modelo
     if not buscar_modelo_funcional():
         return []
 
@@ -153,8 +153,9 @@ def procesar_facebook_secuencial(csv_file: str = "resultados.csv") -> List[Dict]
         print("⚠️ No hay datos de Facebook.")
         return []
     
+    # Muestra a procesar (Controlado por MAX_POSTS_A_PROCESAR)
     df_a_procesar = df_facebook.head(MAX_POSTS_A_PROCESAR)
-    print(f"[Facebook] Procesando {len(df_a_procesar)} post usando: {MODELO_ACTIVO}")
+    print(f"[Facebook] Procesando {len(df_a_procesar)} post(s) con {MODELO_ACTIVO}")
     
     resultados_validos = []
     
@@ -172,7 +173,7 @@ def procesar_facebook_secuencial(csv_file: str = "resultados.csv") -> List[Dict]
         estado = analisis_post['sentimiento']
         if estado == 'Error':
             razon = analisis_post.get('explicacion', '')
-            print(f"\n      ❌ FALLÓ: {razon}")
+            print(f"❌ {razon}")
         else:
             print(f"✅ {estado}")
             
@@ -193,26 +194,57 @@ def procesar_facebook_secuencial(csv_file: str = "resultados.csv") -> List[Dict]
     return resultados_validos
 
 def generar_reporte(resultados: List[Dict]) -> str:
+    """Genera el reporte profesional completo con estadísticas detalladas"""
     if not resultados: return "Sin resultados."
     
     total = len(resultados)
+    
+    # Contadores
     positivos = sum(1 for r in resultados if r['sentimiento_general'] == 'Positivo')
     negativos = sum(1 for r in resultados if r['sentimiento_general'] == 'Negativo')
     neutrales = sum(1 for r in resultados if r['sentimiento_general'] == 'Neutral')
     errores   = sum(1 for r in resultados if r['sentimiento_general'] == 'Error')
     
+    total_validos = positivos + negativos + neutrales
+    
+    # Cálculo de porcentajes seguros
+    pct = lambda x: round((x/total)*100, 1) if total > 0 else 0.0
+    
+    # Métricas de tiempo
+    tiempo_total = sum(tiempos_procesamiento)
+    tiempo_promedio = statistics.mean(tiempos_procesamiento) if tiempos_procesamiento else 0
+    calls_api = len(tiempos_api)
+
     reporte = f"""
         {'='*70}
-        REPORTE DE PRUEBA UNITARIA - FACEBOOK
+        REPORTE DE ANÁLISIS DE SENTIMIENTOS - FACEBOOK (Gemini)
         {'='*70}
-        Modelo Activo: {MODELO_ACTIVO}
-        Total Procesado: {total}
+        Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        Modelo: {MODELO_ACTIVO}
         
-        • Positivo: {positivos}
-        • Negativo: {negativos}
-        • Neutral:  {neutrales}
-        • Errores:  {errores}
+        {'='*70}
+        📊 ESTADÍSTICAS
+        {'='*70}
+        Total Filas Procesadas: {total}
+        Posts Analizados (Válidos): {total_validos}
         
+        {'='*70}
+        📊 DISTRIBUCIÓN
+        {'='*70}
+        • Positivo: {positivos} ({pct(positivos)}%)
+        • Negativo: {negativos} ({pct(negativos)}%)
+        • Neutral:  {neutrales} ({pct(neutrales)}%)
+        • Errores:  {errores} ({pct(errores)}%)
+
+        {'='*70}
+        ⚡ RENDIMIENTO
+        {'='*70}
+        Tiempo Total: {tiempo_total:.2f}s
+        Tiempo Promedio/Post: {tiempo_promedio:.2f}s
+        Llamadas API exitosas: {calls_api}
+        
+        {'='*70}
+        ✅ JSON: {ARCHIVO_RESULTADOS_JSON}
         {'='*70}
         """
     return reporte
@@ -222,7 +254,7 @@ def start_facebook_analysis(csv_file: str = "resultados.csv") -> str:
     tiempos_procesamiento, tiempos_api = [], []
     
     print("\n" + "="*70)
-    print(f"INICIANDO ANÁLISIS FACEBOOK (Modo Auto-Discovery)")
+    print(f"INICIANDO ANÁLISIS FACEBOOK (Modo Profesional)")
     print("="*70)
     
     try:
