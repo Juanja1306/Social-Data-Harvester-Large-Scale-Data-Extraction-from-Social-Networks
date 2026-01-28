@@ -10,6 +10,14 @@ from playwright.sync_api import sync_playwright
 import queue
 import re
 
+# Agregar esto al inicio de main.py
+try:
+    
+    from LLM.sentiment_analyzer_facebook import start_gemini_analysis
+except ImportError as e:
+    print(f"[Debug] Error al importar el analizador: {e}")
+    pass
+
 
 def clean_text(text):
     """Limpia el texto: remueve emojis y caracteres no UTF-8"""
@@ -76,6 +84,35 @@ def csv_writer_process(result_queue, stop_event, filename="resultados.csv"):
             except queue.Empty:
                 continue
 
+# TODO: Funcion para ejecutar los LLMs de cada red social
+def run_llm_process(network, result_queue):
+    """
+    Proceso paralelo para ejecutar los LLMs de cada red social.
+    """
+    try:
+        if network == "Facebook":
+            from LLM.sentiment_analyzer_facebook import start_gemini_analysis
+            # Llamamos a la función que ya creamos en el paso anterior
+            reporte = start_gemini_analysis("resultados.csv")
+            result_queue.put((network, reporte))
+            
+        elif network == "Instagram":
+            # TODO: Compañero de Instagram agregar lógica aquí
+            # from LLM.sentiment_analyzer_instagram import start_instagram_analysis
+            # reporte = start_instagram_analysis("resultados.csv")
+            pass
+            
+        elif network == "LinkedIn":
+            # TODO: Compañero de LinkedIn agregar lógica aquí
+            pass
+            
+        elif network == "Reddit":
+            # TODO: Compañero de Reddit agregar lógica aquí
+            pass
+
+    except Exception as e:
+        result_queue.put((network, f"Error crítico en LLM {network}: {e}"))
+
 
 class ScraperGUI:
     def __init__(self, root):
@@ -126,6 +163,9 @@ class ScraperGUI:
         # Status
         self.status_label = ttk.Label(self.root, text="Estado: Inactivo", relief="sunken")
         self.status_label.pack(fill="x", padx=10, pady=5)
+        
+        #? Gemini boton
+        self.button_Analize_Fellings()
     
     def log(self, message):
         """Agregar mensaje al log"""
@@ -157,9 +197,9 @@ class ScraperGUI:
         
         # Facebook deshabilitado temporalmente
         #networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
-        #networks = [ "Facebook"] #, "Twitter"]
+        networks = [ "Facebook"] #, "Twitter"]
         # Redes sociales activas
-        networks = ["Reddit", "LinkedIn", "Instagram", "Facebook"]
+        #networks = ["Reddit", "LinkedIn", "Instagram", "Facebook"]
         
         # Iniciar proceso escritor
         self.writer_process = Process(target=csv_writer_process, 
@@ -177,6 +217,55 @@ class ScraperGUI:
         
         self.log(f"Búsqueda iniciada: '{query}' (máx {max_posts} posts por red)")
         self.monitor_queue()
+    
+    
+    def start_llm_analysis(self):
+        """Inicia el análisis de LLMs en paralelo"""
+        LLMs = ["Facebook"] 
+        
+        if not os.path.exists("resultados.csv"):
+            messagebox.showerror("Error", "No existe resultados.csv para analizar")
+            return
+
+        self.log("Iniciando análisis de sentimientos (LLM) en paralelo...")
+        
+        self.llm_queue = Queue()
+        self.active_llm_processes = 0
+
+        for network in LLMs:
+            # --- CORRECCIÓN AQUÍ ---
+            # 1. target=run_llm_process (la función externa, SIN self)
+            # 2. args=(network, self.llm_queue) (pasamos la COLA, no la función)
+            p = Process(target=run_llm_process, args=(network, self.llm_queue))
+            p.start()
+            self.processes.append(p)
+            self.active_llm_processes += 1
+            self.log(f"🚀 Iniciado proceso LLM para: {network}")
+        
+        self.root.after(500, self.monitor_llm_queue)
+    
+    def monitor_llm_queue(self):
+        """Revisa si llegaron reportes de los LLMs"""
+        try:
+            while not self.llm_queue.empty():
+                network, reporte = self.llm_queue.get_nowait()
+                self.active_llm_processes -= 1
+                
+                self.log(f"✅ Análisis finalizado: {network}")
+                
+                if reporte:
+                    messagebox.showinfo(f"Reporte Gemini - {network}", reporte)
+            
+            if self.active_llm_processes > 0:
+                self.root.after(500, self.monitor_llm_queue)
+            else:
+                self.log("Todos los análisis LLM han terminado.")
+
+        except queue.Empty:
+            pass
+        except Exception as e:
+            print(f"Error en monitor LLM: {e}")
+            
     
     @staticmethod
     def run_scraper(network, query, max_posts, result_queue, stop_event, process_id):
@@ -252,6 +341,18 @@ class ScraperGUI:
         self.stop_btn.config(state="disabled")
         self.status_label.config(text="Estado: Detenido")
         self.log("Búsqueda detenida. Datos guardados en resultados.csv")
+
+
+    def button_Analize_Fellings(self):
+        """Crea el botón en la interfaz. Comenta esta función en setup_ui para quitarlo."""        
+        
+        ai_frame = ttk.LabelFrame(self.root, text="Inteligencia Artificial (Práctica 07)", padding=5)
+        ai_frame.pack(fill="x", padx=10, pady=5)
+        
+        # CAMBIO AQUÍ: command=self.start_llm_analysis
+        btn = ttk.Button(ai_frame, text="Analizar Sentimientos (Gemini)", command=self.start_llm_analysis)
+        btn.pack(pady=5)
+
 
 
 if __name__ == "__main__":
