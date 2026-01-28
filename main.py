@@ -452,10 +452,51 @@ class ScraperGUI:
 
         return counts
 
+    def _parse_report_times(self, filepath, nombre_red):
+        """
+        Lee un archivo de reporte de texto y extrae las métricas de tiempo:
+        - Tiempo Total de Procesamiento
+        - Tiempo Promedio por Publicación
+        Devuelve dict con estos valores o None si el archivo no existe.
+        """
+        if not os.path.exists(filepath):
+            self.log(f"[Gráficas] No se encontró el reporte de {nombre_red}: {filepath}")
+            return None
+
+        times = {"tiempo_total": 0.0, "tiempo_promedio": 0.0}
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if "Tiempo Total de Procesamiento:" in line:
+                        # Extraer el número antes de "segundos"
+                        parts = line.split(":")
+                        if len(parts) > 1:
+                            num_str = parts[1].split("segundos")[0].strip()
+                            try:
+                                times["tiempo_total"] = float(num_str)
+                            except ValueError:
+                                pass
+                    elif "Tiempo Promedio por Publicación:" in line:
+                        # Extraer el número antes de "segundos"
+                        parts = line.split(":")
+                        if len(parts) > 1:
+                            num_str = parts[1].split("segundos")[0].strip()
+                            try:
+                                times["tiempo_promedio"] = float(num_str)
+                            except ValueError:
+                                pass
+        except Exception as e:
+            self.log(f"[Gráficas] Error leyendo tiempos de {filepath}: {e}")
+            return None
+
+        return times
+
     def view_graphs(self):
         """
         Abre una ventana con gráficas de barras comparando
-        sentimientos por red social (Instagram, LinkedIn, Twitter).
+        sentimientos por red social (Instagram, LinkedIn, Twitter),
+        tiempo promedio por publicación y tiempo total de procesamiento.
         """
         redes = [
             ("Instagram", "reporte_instagram_openai.txt"),
@@ -463,39 +504,84 @@ class ScraperGUI:
             ("Twitter", "reporte_twitter_grok.txt"),
         ]
 
-        datos = []
+        datos_sentimientos = []
+        datos_tiempos = []
+        
         for nombre, archivo in redes:
             stats = self._parse_report_counts(archivo, nombre)
             if stats:
-                datos.append((nombre, stats))
+                datos_sentimientos.append((nombre, stats))
+            
+            times = self._parse_report_times(archivo, nombre)
+            if times:
+                datos_tiempos.append((nombre, times))
 
-        if not datos:
+        if not datos_sentimientos and not datos_tiempos:
             messagebox.showerror("Error", "No se encontraron reportes de LLM para generar gráficas.")
             return
 
-        # Preparar figura de Matplotlib
-        sentimientos = ["Positivo", "Negativo", "Neutral", "Error"]
-        x = list(range(len(sentimientos)))
-        width = 0.2
+        # Crear figura con 3 subplots
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+        fig.suptitle("Análisis de Sentimientos y Rendimiento por Red Social", fontsize=14, fontweight="bold")
 
-        fig, ax = plt.subplots(figsize=(8, 4))
+        # Gráfica 1: Distribución de sentimientos
+        if datos_sentimientos:
+            sentimientos = ["Positivo", "Negativo", "Neutral", "Error"]
+            x = list(range(len(sentimientos)))
+            width = 0.2
 
-        for idx, (nombre, stats) in enumerate(datos):
-            valores = [stats.get(s, 0) for s in sentimientos]
-            posiciones = [i + idx * width for i in x]
-            ax.bar(posiciones, valores, width=width, label=nombre)
+            for idx, (nombre, stats) in enumerate(datos_sentimientos):
+                valores = [stats.get(s, 0) for s in sentimientos]
+                posiciones = [i + idx * width for i in x]
+                axes[0].bar(posiciones, valores, width=width, label=nombre)
 
-        ax.set_xticks([i + width for i in x])
-        ax.set_xticklabels(sentimientos)
-        ax.set_ylabel("Número de elementos")
-        ax.set_title("Distribución de sentimientos por red social")
-        ax.legend()
-        ax.grid(axis="y", linestyle="--", alpha=0.3)
+            axes[0].set_xticks([i + width for i in x])
+            axes[0].set_xticklabels(sentimientos)
+            axes[0].set_ylabel("Número de elementos")
+            axes[0].set_title("Distribución de Sentimientos")
+            axes[0].legend()
+            axes[0].grid(axis="y", linestyle="--", alpha=0.3)
+
+        # Gráfica 2: Tiempo Promedio por Publicación
+        if datos_tiempos:
+            nombres = [nombre for nombre, _ in datos_tiempos]
+            tiempos_promedio = [times["tiempo_promedio"] for _, times in datos_tiempos]
+            
+            bars = axes[1].bar(nombres, tiempos_promedio, color=['#FF6B6B', '#4ECDC4', '#45B7D1'])
+            axes[1].set_ylabel("Tiempo (segundos)")
+            axes[1].set_title("Tiempo Promedio por Publicación")
+            axes[1].grid(axis="y", linestyle="--", alpha=0.3)
+            
+            # Agregar valores en las barras
+            for bar, valor in zip(bars, tiempos_promedio):
+                height = bar.get_height()
+                axes[1].text(bar.get_x() + bar.get_width()/2., height,
+                           f'{valor:.2f}s',
+                           ha='center', va='bottom', fontsize=9)
+
+        # Gráfica 3: Tiempo Total de Procesamiento
+        if datos_tiempos:
+            nombres = [nombre for nombre, _ in datos_tiempos]
+            tiempos_totales = [times["tiempo_total"] for _, times in datos_tiempos]
+            
+            bars = axes[2].bar(nombres, tiempos_totales, color=['#FF6B6B', '#4ECDC4', '#45B7D1'])
+            axes[2].set_ylabel("Tiempo (segundos)")
+            axes[2].set_title("Tiempo Total de Procesamiento")
+            axes[2].grid(axis="y", linestyle="--", alpha=0.3)
+            
+            # Agregar valores en las barras
+            for bar, valor in zip(bars, tiempos_totales):
+                height = bar.get_height()
+                axes[2].text(bar.get_x() + bar.get_width()/2., height,
+                           f'{valor:.2f}s',
+                           ha='center', va='bottom', fontsize=9)
+
+        plt.tight_layout()
 
         # Ventana de Tkinter para incrustar la figura
         ventana = tk.Toplevel(self.root)
-        ventana.title("Gráficas de Sentimientos (LLM)")
-        ventana.geometry("800x400")
+        ventana.title("Gráficas de Sentimientos y Rendimiento (LLM)")
+        ventana.geometry("1200x500")
 
         canvas = FigureCanvasTkAgg(fig, master=ventana)
         canvas.draw()
