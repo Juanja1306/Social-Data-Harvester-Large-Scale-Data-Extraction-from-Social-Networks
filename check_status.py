@@ -15,7 +15,7 @@ try:
     # Prueba unitaria simple
     print("Enviando petición de prueba ('Hola')...")
     response = client.models.generate_content(
-        model="gemini-2.0-flash", 
+        model="gemini-2.0-flash-lite", 
         contents="Responde solo la palabra: 'ACTIVA'"
     )
     
