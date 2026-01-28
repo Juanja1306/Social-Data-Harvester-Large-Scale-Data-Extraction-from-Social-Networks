@@ -96,10 +96,11 @@ def run_llm_process(network, result_queue):
             reporte = start_gemini_analysis("resultados.csv")
             result_queue.put((network, reporte))
             
-        elif network == "Instagram":
+        if network == "Instagram":
             # TODO: Compañero de Instagram agregar lógica aquí
-            # from LLM.sentiment_analyzer_instagram import start_instagram_analysis
-            # reporte = start_instagram_analysis("resultados.csv")
+            from LLM.sentiment_analyzer_instagram import start_instagram_analysis
+            reporte = start_instagram_analysis("resultados.csv")
+            result_queue.put((network, reporte))
             pass
             
         elif network == "LinkedIn":
@@ -198,8 +199,7 @@ class ScraperGUI:
         self.status_label.config(text="Estado: Scraping activo...")
         
         # Facebook deshabilitado temporalmente
-        #networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
-        networks = [ "Instagram"] #, "Twitter"]
+        networks = ["LinkedIn", "Instagram", "Facebook"] #, "Twitter"]
         # Redes sociales activas
         #networks = ["Reddit", "LinkedIn", "Instagram", "Facebook"]
         
@@ -223,7 +223,7 @@ class ScraperGUI:
     
     def start_llm_analysis(self):
         """Inicia el análisis de LLMs en paralelo"""
-        LLMs = ["LinkedIn"]  # Procesamiento concurrente con DeepSeek 
+        LLMs = ["LinkedIn", "Instagram"]  # Procesamiento concurrente 
         
         if not os.path.exists("resultados.csv"):
             messagebox.showerror("Error", "No existe resultados.csv para analizar")
@@ -392,7 +392,7 @@ class ScraperGUI:
         ai_frame.pack(fill="x", padx=10, pady=5)
         
         # CAMBIO AQUÍ: command=self.start_llm_analysis
-        btn = ttk.Button(ai_frame, text="Analizar Sentimientos (Gemini)", command=self.start_llm_analysis)
+        btn = ttk.Button(ai_frame, text="Analizar Sentimientos (AI)", command=self.start_llm_analysis)
         btn.pack(pady=5)
 
 
