@@ -103,8 +103,10 @@ def run_llm_process(network, result_queue):
             pass
             
         elif network == "LinkedIn":
-            # TODO: Compañero de LinkedIn agregar lógica aquí
-            pass
+            from LLM.sentiment_analyzer_linkedin import start_linkedin_analysis
+            # Llamamos a la función de análisis concurrente de LinkedIn con DeepSeek
+            reporte = start_linkedin_analysis("resultados.csv")
+            result_queue.put((network, reporte))
             
         elif network == "Reddit":
             # TODO: Compañero de Reddit agregar lógica aquí
@@ -221,7 +223,7 @@ class ScraperGUI:
     
     def start_llm_analysis(self):
         """Inicia el análisis de LLMs en paralelo"""
-        LLMs = ["Facebook"] 
+        LLMs = ["LinkedIn"]  # Procesamiento concurrente con DeepSeek 
         
         if not os.path.exists("resultados.csv"):
             messagebox.showerror("Error", "No existe resultados.csv para analizar")
@@ -244,6 +246,44 @@ class ScraperGUI:
         
         self.root.after(500, self.monitor_llm_queue)
     
+    def mostrar_reporte(self, titulo: str, contenido: str):
+        """Muestra el reporte en una ventana con scroll y tamaño reducido"""
+        ventana_reporte = tk.Toplevel(self.root)
+        ventana_reporte.title(titulo)
+        ventana_reporte.geometry("600x400")  # Ventana más pequeña
+        
+        # Frame principal
+        frame_principal = ttk.Frame(ventana_reporte, padding=10)
+        frame_principal.pack(fill="both", expand=True)
+        
+        # Etiqueta de título
+        ttk.Label(frame_principal, text=titulo, font=("Arial", 12, "bold")).pack(pady=(0, 10))
+        
+        # Área de texto con scroll
+        texto_reporte = scrolledtext.ScrolledText(
+            frame_principal,
+            wrap=tk.WORD,
+            width=70,
+            height=20,
+            font=("Consolas", 9)
+        )
+        texto_reporte.pack(fill="both", expand=True)
+        texto_reporte.insert("1.0", contenido)
+        texto_reporte.config(state="disabled")  # Solo lectura
+        
+        # Botón de cerrar
+        ttk.Button(
+            frame_principal,
+            text="Cerrar",
+            command=ventana_reporte.destroy
+        ).pack(pady=(10, 0))
+        
+        # Centrar ventana
+        ventana_reporte.update_idletasks()
+        x = (ventana_reporte.winfo_screenwidth() // 2) - (ventana_reporte.winfo_width() // 2)
+        y = (ventana_reporte.winfo_screenheight() // 2) - (ventana_reporte.winfo_height() // 2)
+        ventana_reporte.geometry(f"+{x}+{y}")
+    
     def monitor_llm_queue(self):
         """Revisa si llegaron reportes de los LLMs"""
         try:
@@ -254,7 +294,9 @@ class ScraperGUI:
                 self.log(f"✅ Análisis finalizado: {network}")
                 
                 if reporte:
-                    messagebox.showinfo(f"Reporte Gemini - {network}", reporte)
+                    # Usar ventana personalizada con scroll en lugar de messagebox
+                    titulo = f"Reporte - {network}"
+                    self.mostrar_reporte(titulo, reporte)
             
             if self.active_llm_processes > 0:
                 self.root.after(500, self.monitor_llm_queue)
