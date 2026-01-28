@@ -1,0 +1,59 @@
+
+        ======================================================================
+        REPORTE DE ANÁLISIS DE SENTIMIENTOS - LINKEDIN (DeepSeek)
+        ======================================================================
+        Fecha de Análisis: 2026-01-27 22:36:35
+        Modelo Utilizado: deepseek-chat
+        Modo de Procesamiento: Concurrente (máx 10 tareas)
+
+        ======================================================================
+        📊 ESTADÍSTICAS DE ELEMENTOS ANALIZADOS
+        ======================================================================
+        Total de Publicaciones (Filas CSV): 10
+        Total de Posts Analizados: 10
+        Total de Comentarios Analizados: 13
+        ──────────────────────────────────────────────────────────────
+        TOTAL DE ELEMENTOS ANALIZADOS: 23
+          (Posts + Comentarios)
+
+        ======================================================================
+        📊 DISTRIBUCIÓN DE SENTIMIENTOS
+        ======================================================================
+        Basado en TODOS los elementos analizados (23 elementos):
+
+        • Positivo: 10 (43.48%)
+        • Negativo: 3 (13.04%)
+        • Neutral:  10 (43.48%)
+        • Error:    0 (0.0%)
+
+        ======================================================================
+        ⚡ MÉTRICAS DE RENDIMIENTO
+        ======================================================================
+        Tiempo Total de Procesamiento: 51.37 segundos
+        Tiempo Promedio por Publicación: 5.137 segundos
+        Tiempo Mediano por Publicación: 4.847 segundos
+        Tiempo Mínimo: 2.898 segundos
+        Tiempo Máximo: 8.327 segundos
+
+        Tiempo Total en Llamadas API: 110.07 segundos
+        Tiempo Promedio por Llamada API: 4.786 segundos
+        Total de Llamadas API: 23
+
+        Throughput: 0.19 publicaciones/segundo
+        Throughput de Elementos: 0.45 elementos/segundo
+
+        ======================================================================
+        📈 ANÁLISIS COMPARATIVO
+        ======================================================================
+        Eficiencia del Procesamiento Concurrente:
+        • Publicaciones procesadas simultáneamente: hasta 10
+        • Reducción de tiempo estimada vs secuencial: ~0.0%
+
+        Capacidad de Clasificación a Gran Escala:
+        • Total de elementos analizados: 23 (Posts: 10 + Comentarios: 13)
+        • Tasa de éxito: 100.0%
+
+        ======================================================================
+        ✅ Resultados completos guardados en: analisis_linkedin_completo.json
+        ======================================================================
+        
