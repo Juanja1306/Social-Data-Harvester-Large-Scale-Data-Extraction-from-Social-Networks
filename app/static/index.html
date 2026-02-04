@@ -90,7 +90,31 @@
       </div>
     </section>
 
-    <section class="charts-gallery card animate-in hidden" id="chartsGallerySection" style="--i: 5">
+    <section class="comments-explained card animate-in" id="commentsSection" style="--i: 5">
+      <h2>Comentarios y explicaciones</h2>
+      <p class="comments-hint" id="commentsHint">Elige un Request (y opcionalmente una red) para ver cada publicación con su post, comentarios y la explicación de sentimiento por comentario.</p>
+      <div class="form-row comments-form">
+        <label for="commentsRequest">Request:</label>
+        <select id="commentsRequest">
+          <option value="">-- Selecciona un Request --</option>
+        </select>
+        <label for="commentsNetwork">Red:</label>
+        <select id="commentsNetwork">
+          <option value="">Todas</option>
+          <option value="LinkedIn">LinkedIn</option>
+          <option value="Instagram">Instagram</option>
+          <option value="Facebook">Facebook</option>
+          <option value="Twitter">Twitter</option>
+        </select>
+        <button type="button" id="btnComments" class="btn btn-accent">Ver comentarios y explicaciones</button>
+      </div>
+      <div id="commentsResults" class="comments-results hidden">
+        <h3 id="commentsResultsTitle" class="comments-results-title"></h3>
+        <div id="commentsList" class="comments-list"></div>
+      </div>
+    </section>
+
+    <section class="charts-gallery card animate-in hidden" id="chartsGallerySection" style="--i: 6">
       <h2>Galería de gráficas</h2>
       <p class="gallery-hint" id="galleryHint">Genera gráficas para verlas aquí. Navega con las flechas.</p>
       <div id="chartsCarousel" class="charts-carousel hidden">

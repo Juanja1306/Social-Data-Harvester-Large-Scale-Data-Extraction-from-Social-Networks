@@ -246,14 +246,29 @@ async def websocket_log(websocket: WebSocket):
             ws_log_connections.remove(websocket)
 
 
-def _get_results_from_db(request_value=None):
-    """Read rows from SQLite, optionally filtered by Request. Returns list of dicts."""
+def _parse_data_field(data_str):
+    """Parsea columna Data: post|comentario1|comentario2|... (mismo formato que LLM)."""
+    if not data_str or not isinstance(data_str, str):
+        return "", []
+    partes = [p.strip() for p in data_str.split("|") if p.strip()]
+    if not partes:
+        return "", []
+    return partes[0], partes[1:]
+
+
+def _get_results_from_db(request_value=None, network=None):
+    """Read rows from SQLite, optionally filtered by Request and/or RedSocial. Returns list of dicts."""
     db_path = get_db_path()
     if not os.path.isfile(db_path):
         return []
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    if request_value:
+    if request_value and network:
+        cur = conn.execute(
+            "SELECT RedSocial, IDP, Request, FechaPeticion, FechaPublicacion, idPublicacion, Data FROM resultados WHERE Request = ? AND RedSocial = ? ORDER BY id",
+            (request_value, network),
+        )
+    elif request_value:
         cur = conn.execute(
             "SELECT RedSocial, IDP, Request, FechaPeticion, FechaPublicacion, idPublicacion, Data FROM resultados WHERE Request = ? ORDER BY id",
             (request_value,),
@@ -264,6 +279,10 @@ def _get_results_from_db(request_value=None):
         )
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
+    if request_value and network and not rows:
+        return rows
+    if request_value and not network:
+        return rows
     return rows
 
 
@@ -277,6 +296,95 @@ async def list_requests():
     requests = [r[0] for r in cur.fetchall()]
     conn.close()
     return {"requests": requests}
+
+
+@app.get("/api/comments-explained")
+async def get_comments_explained(request: str, network: str | None = None):
+    """
+    Devuelve publicaciones con post, comentarios y explicación por comentario (sentimiento + explicación).
+    Usa resultados.db (texto) y analisis.db (análisis LLM). request obligatorio; network opcional.
+    """
+    request_val = (request or "").strip()
+    if not request_val:
+        raise HTTPException(status_code=400, detail="El parámetro request es obligatorio.")
+    db_path = get_db_path()
+    analisis_path = get_analisis_db_path()
+    if not os.path.isfile(db_path):
+        raise HTTPException(status_code=404, detail="No hay datos en resultados. Ejecuta una búsqueda primero.")
+    rows = _get_results_from_db(request_value=request_val, network=network)
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No hay resultados para el Request '{request_val}'" + (f" y red '{network}'." if network else "."),
+        )
+    # Si no se filtró por red, agrupar por red para pedir analisis por red
+    networks_in_results = list({r["RedSocial"] for r in rows})
+    if network:
+        networks_in_results = [network] if network in networks_in_results else []
+    analisis_by_network = {}
+    if os.path.isfile(analisis_path):
+        conn_ana = sqlite3.connect(analisis_path)
+        for net in networks_in_results:
+            cur = conn_ana.execute(
+                "SELECT content_json FROM analisis WHERE network = ? AND request = ? ORDER BY created_at DESC LIMIT 1",
+                (net, request_val),
+            )
+            row_ana = cur.fetchone()
+            if row_ana:
+                analisis_by_network[net] = json_mod.loads(row_ana[0])
+        conn_ana.close()
+    # idPublicacion -> índice en la lista de analisis (mismo orden que publicaciones en el JSON)
+    # El JSON de analisis es una lista de publicaciones; no tiene id en orden garantizado, hay que matchear por idPublicacion
+    def build_analisis_map(analisis_list):
+        return {item.get("idPublicacion"): item for item in (analisis_list or [])}
+    publications_out = []
+    for r in rows:
+        red = r["RedSocial"]
+        analisis_list = analisis_by_network.get(red)
+        if not analisis_list:
+            # Sin análisis LLM: mostrar solo texto sin explicación
+            post_text, comentarios = _parse_data_field(r.get("Data") or "")
+            publications_out.append({
+                "idPublicacion": r.get("idPublicacion") or "",
+                "red": red,
+                "fechaPublicacion": r.get("FechaPublicacion") or "",
+                "post_text": post_text,
+                "post_sentimiento": None,
+                "post_explicacion": None,
+                "comments": [{"text": c, "sentimiento": None, "explicacion": None} for c in comentarios],
+            })
+            continue
+        amap = build_analisis_map(analisis_list)
+        analisis_item = amap.get(r.get("idPublicacion"))
+        post_text, comentarios = _parse_data_field(r.get("Data") or "")
+        post_sentimiento = None
+        post_explicacion = None
+        analisis_comentarios = []
+        if analisis_item:
+            ap = analisis_item.get("analisis_post")
+            if ap:
+                post_sentimiento = ap.get("sentimiento")
+                post_explicacion = ap.get("explicacion")
+            analisis_comentarios = analisis_item.get("analisis_comentarios") or []
+        comments_out = []
+        for i, c_text in enumerate(comentarios):
+            exp = None
+            sent = None
+            if i < len(analisis_comentarios):
+                ac = analisis_comentarios[i]
+                exp = ac.get("explicacion")
+                sent = ac.get("sentimiento")
+            comments_out.append({"text": c_text, "sentimiento": sent, "explicacion": exp})
+        publications_out.append({
+            "idPublicacion": r.get("idPublicacion") or "",
+            "red": red,
+            "fechaPublicacion": r.get("FechaPublicacion") or "",
+            "post_text": post_text,
+            "post_sentimiento": post_sentimiento,
+            "post_explicacion": post_explicacion,
+            "comments": comments_out,
+        })
+    return JSONResponse(content={"request": request_val, "publications": publications_out})
 
 
 @app.get("/api/results")

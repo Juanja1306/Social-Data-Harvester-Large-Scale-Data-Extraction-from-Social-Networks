@@ -215,6 +215,8 @@
         llmRequest.innerHTML = "<option value=\"\">-- Selecciona un Request --</option>" + optionsHtml;
         const chartsRequestEl = document.getElementById("chartsRequest");
         if (chartsRequestEl) chartsRequestEl.innerHTML = "<option value=\"\">-- Todos los requests --</option>" + optionsHtml;
+        const commentsRequestEl = document.getElementById("commentsRequest");
+        if (commentsRequestEl) commentsRequestEl.innerHTML = "<option value=\"\">-- Selecciona un Request --</option>" + optionsHtml;
         updateDownloadLink();
       })
       .catch(() => {});
@@ -424,6 +426,128 @@
         .finally(() => {
           btnCharts.disabled = false;
         });
+    });
+  }
+
+  const commentsSection = document.getElementById("commentsSection");
+  const commentsHint = document.getElementById("commentsHint");
+  const commentsResults = document.getElementById("commentsResults");
+  const commentsResultsTitle = document.getElementById("commentsResultsTitle");
+  const commentsList = document.getElementById("commentsList");
+  const commentsRequestEl = document.getElementById("commentsRequest");
+  const commentsNetworkEl = document.getElementById("commentsNetwork");
+  const btnComments = document.getElementById("btnComments");
+
+  function renderCommentsExplained(data) {
+    if (!data || !data.publications || !data.publications.length) {
+      commentsList.innerHTML = "<p class=\"comments-empty\">No hay publicaciones para mostrar.</p>";
+      return;
+    }
+    commentsResultsTitle.textContent = "Request: " + (data.request || "");
+    commentsList.innerHTML = "";
+    data.publications.forEach((pub, idx) => {
+      const card = document.createElement("div");
+      card.className = "publication-card";
+      const redBadge = document.createElement("span");
+      redBadge.className = "pub-red";
+      redBadge.textContent = pub.red || "";
+      const fecha = document.createElement("span");
+      fecha.className = "pub-fecha";
+      fecha.textContent = pub.fechaPublicacion ? " · " + pub.fechaPublicacion : "";
+      const header = document.createElement("div");
+      header.className = "pub-header";
+      header.appendChild(redBadge);
+      header.appendChild(fecha);
+
+      const postBlock = document.createElement("div");
+      postBlock.className = "post-block";
+      const postLabel = document.createElement("div");
+      postLabel.className = "block-label";
+      postLabel.textContent = "Post";
+      postBlock.appendChild(postLabel);
+      const postText = document.createElement("div");
+      postText.className = "block-text";
+      postText.textContent = pub.post_text || "(sin texto)";
+      postBlock.appendChild(postText);
+      if (pub.post_sentimiento || pub.post_explicacion) {
+        const postMeta = document.createElement("div");
+        postMeta.className = "block-meta";
+        if (pub.post_sentimiento) {
+          const sent = document.createElement("span");
+          sent.className = "sentimiento " + (pub.post_sentimiento === "Positivo" ? "positivo" : pub.post_sentimiento === "Negativo" ? "negativo" : "neutral");
+          sent.textContent = pub.post_sentimiento;
+          postMeta.appendChild(sent);
+        }
+        if (pub.post_explicacion) {
+          const exp = document.createElement("div");
+          exp.className = "explicacion";
+          exp.textContent = pub.post_explicacion;
+          postMeta.appendChild(exp);
+        }
+        postBlock.appendChild(postMeta);
+      }
+      card.appendChild(header);
+      card.appendChild(postBlock);
+
+      if (pub.comments && pub.comments.length) {
+        const commentsLabel = document.createElement("div");
+        commentsLabel.className = "comments-block-label";
+        commentsLabel.textContent = "Comentarios (" + pub.comments.length + ")";
+        card.appendChild(commentsLabel);
+        pub.comments.forEach((c, i) => {
+          const commentBlock = document.createElement("div");
+          commentBlock.className = "comment-block";
+          const cText = document.createElement("div");
+          cText.className = "comment-text";
+          cText.textContent = c.text || "(sin texto)";
+          commentBlock.appendChild(cText);
+          if (c.sentimiento || c.explicacion) {
+            const cMeta = document.createElement("div");
+            cMeta.className = "comment-meta";
+            if (c.sentimiento) {
+              const sent = document.createElement("span");
+              sent.className = "sentimiento " + (c.sentimiento === "Positivo" ? "positivo" : c.sentimiento === "Negativo" ? "negativo" : "neutral");
+              sent.textContent = c.sentimiento;
+              cMeta.appendChild(sent);
+            }
+            if (c.explicacion) {
+              const exp = document.createElement("div");
+              exp.className = "explicacion";
+              exp.textContent = c.explicacion;
+              cMeta.appendChild(exp);
+            }
+            commentBlock.appendChild(cMeta);
+          }
+          card.appendChild(commentBlock);
+        });
+      }
+      commentsList.appendChild(card);
+    });
+  }
+
+  if (btnComments) {
+    btnComments.addEventListener("click", function () {
+      const request = (commentsRequestEl && commentsRequestEl.value || "").trim();
+      if (!request) {
+        alert("Selecciona un Request para ver comentarios y explicaciones.");
+        return;
+      }
+      const network = (commentsNetworkEl && commentsNetworkEl.value) || "";
+      btnComments.disabled = true;
+      const qs = "?request=" + encodeURIComponent(request) + (network ? "&network=" + encodeURIComponent(network) : "");
+      fetch(API + "/comments-explained" + qs)
+        .then((r) => {
+          if (!r.ok) return r.json().then((d) => Promise.reject(new Error(d.detail || r.statusText)));
+          return r.json();
+        })
+        .then((data) => {
+          if (commentsHint) commentsHint.classList.add("hidden");
+          commentsResults.classList.remove("hidden");
+          renderCommentsExplained(data);
+          commentsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        })
+        .catch((err) => alert("Error: " + (err.message || err)))
+        .finally(() => { btnComments.disabled = false; });
     });
   }
 
