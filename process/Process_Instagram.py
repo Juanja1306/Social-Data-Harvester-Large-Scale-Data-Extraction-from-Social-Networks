@@ -19,17 +19,21 @@ class InstagramScraper:
     Compatible con la arquitectura de 'main.py' y multiprocesamiento.
     """
 
-    def __init__(self, query, result_queue, stop_event, max_posts=50):
+    def __init__(self, query, result_queue, stop_event, max_posts=50, original_query=None):
         """
         Inicializa el scraper con los parámetros del orquestador.
         
         Args:
-            query (str): Término de búsqueda (hashtag o palabra clave).
-            result_queue (multiprocessing.Queue): Cola para enviar resultados al escritor CSV.
-            stop_event (multiprocessing.Event): Señal para detener la ejecución graciosamente.
-            max_posts (int): Límite de publicaciones a procesar.
+            query (str): Término de búsqueda TÉCNICO (puede ser hashtags, etc).
+            result_queue (multiprocessing.Queue): Cola para enviar resultados.
+            stop_event (multiprocessing.Event): Señal para detener.
+            max_posts (int): Límite de publicaciones.
+            original_query (str): Término ORIGINAL del usuario (para registro en BD).
         """
         self.query = query
+        # Si no nos pasan la original, asumimos que es igual a la técnica
+        self.original_query = original_query if original_query else query
+        
         self.result_queue = result_queue
         self.stop_event = stop_event
         self.max_posts = max_posts
@@ -294,7 +298,7 @@ class InstagramScraper:
                 data_row = {
                     "RedSocial": "Instagram",
                     "IDP": self.process_id,
-                    "Request": self.query,
+                    "Request": self.original_query, # <--- USAR ORIGINAL, NO TÉCNICA
                     "FechaPeticion": self.request_date,
                     "FechaPublicacion": details.get("date", self.request_date),
                     "idPublicacion": current_url.split("/p/")[-1].split("/")[0], # ID robusto

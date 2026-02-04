@@ -308,7 +308,8 @@ def run_scraper(network, query, max_posts, result_queue, stop_event, process_id,
                     scraper.run(page)
                 elif network == "Instagram":
                     from process.Process_Instagram import InstagramScraper
-                    scraper = InstagramScraper(optimized_query, result_queue, stop_event, max_posts)
+                    # Pasamos "optimized_query" para buscar, pero "query" (original) para guardar en BD
+                    scraper = InstagramScraper(optimized_query, result_queue, stop_event, max_posts, original_query=query)
                     scraper.run(page)
                 elif network == "Facebook":
                     from process.Process_Facebook import FacebookScraper
