@@ -22,6 +22,8 @@ from app.config import (
     LLM_NETWORKS,
     STOP_JOIN_TIMEOUT,
     get_db_path,
+    get_reportes_db_path,
+    get_analisis_db_path,
 )
 from app import scraping
 
@@ -268,13 +270,27 @@ async def llm_analyze(body: LLMAnalyzeBody):
     scrape_state["llm_log_queue"] = llm_log_queue
     scrape_state["llm_running"] = True
     processes = []
+    reportes_db_path = get_reportes_db_path()
+    analisis_db_path = get_analisis_db_path()
+    scraping.ensure_reportes_table(reportes_db_path)
+    scraping.ensure_analisis_table(analisis_db_path)
+    request_val = body.request.strip()
     for network in networks:
         if network not in LLM_NETWORKS:
             continue
+        txt_name, json_name = LLM_REPORT_FILES[network]
         p = Process(
             target=scraping.run_llm_process,
             args=(network, llm_queue),
-            kwargs={"csv_file": csv_path, "log_queue": llm_log_queue},
+            kwargs={
+                "csv_file": csv_path,
+                "log_queue": llm_log_queue,
+                "request_value": request_val,
+                "reportes_db_path": reportes_db_path,
+                "analisis_db_path": analisis_db_path,
+                "report_filename": txt_name,
+                "analisis_filename": json_name,
+            },
         )
         p.start()
         processes.append(p)
@@ -295,42 +311,77 @@ async def llm_analyze(body: LLMAnalyzeBody):
 
 @app.get("/api/llm/reports")
 async def list_llm_reports():
-    """List available LLM report files (text + json) per network."""
-    root = os.getcwd()
+    """List available LLM reports from SQLite (reportes.db + analisis.db) per network."""
+    reportes_path = get_reportes_db_path()
+    analisis_path = get_analisis_db_path()
     reports = []
-    for network, (txt_name, json_name) in LLM_REPORT_FILES.items():
-        txt_path = os.path.join(root, txt_name)
-        json_path = os.path.join(root, json_name)
+    for network in LLM_REPORT_FILES:
+        has_text = False
+        has_json = False
+        if os.path.isfile(reportes_path):
+            conn = sqlite3.connect(reportes_path)
+            cur = conn.execute("SELECT 1 FROM reportes WHERE network = ? LIMIT 1", (network,))
+            has_text = cur.fetchone() is not None
+            conn.close()
+        if os.path.isfile(analisis_path):
+            conn = sqlite3.connect(analisis_path)
+            cur = conn.execute("SELECT 1 FROM analisis WHERE network = ? LIMIT 1", (network,))
+            has_json = cur.fetchone() is not None
+            conn.close()
         reports.append({
             "network": network,
-            "report_file": txt_name,
-            "has_text": os.path.isfile(txt_path),
-            "has_json": os.path.isfile(json_path),
+            "has_text": has_text,
+            "has_json": has_json,
         })
     return {"reports": reports}
 
 
 @app.get("/api/llm/reports/{network}")
-async def get_llm_report(network: str, format: str = "text"):
-    """Return report content: format=text (reporte *.txt) or format=json (analisis *_completo.json)."""
+async def get_llm_report(network: str, format: str = "text", request: str | None = None):
+    """Return report content from SQLite: format=text (reportes.db) or format=json (analisis.db). Optional ?request= for a specific run."""
     if network not in LLM_REPORT_FILES:
         raise HTTPException(status_code=404, detail="Unknown network")
-    txt_name, json_name = LLM_REPORT_FILES[network]
-    root = os.getcwd()
     if format == "json":
-        path = os.path.join(root, json_name)
-        if not os.path.isfile(path):
-            raise HTTPException(status_code=404, detail="Report file not found")
+        analisis_path = get_analisis_db_path()
+        if not os.path.isfile(analisis_path):
+            raise HTTPException(status_code=404, detail="No analysis data found")
+        conn = sqlite3.connect(analisis_path)
+        if request:
+            cur = conn.execute(
+                "SELECT content_json FROM analisis WHERE network = ? AND request = ? ORDER BY created_at DESC LIMIT 1",
+                (network, request),
+            )
+        else:
+            cur = conn.execute(
+                "SELECT content_json FROM analisis WHERE network = ? ORDER BY created_at DESC LIMIT 1",
+                (network,),
+            )
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            raise HTTPException(status_code=404, detail="Report not found")
         import json as json_mod
-        with open(path, "r", encoding="utf-8") as f:
-            data = json_mod.load(f)
+        data = json_mod.loads(row[0])
         return JSONResponse(content=data)
-    path = os.path.join(root, txt_name)
-    if not os.path.isfile(path):
-        raise HTTPException(status_code=404, detail="Report file not found")
-    with open(path, "r", encoding="utf-8") as f:
-        content = f.read()
-    return JSONResponse(content={"network": network, "content": content})
+    reportes_path = get_reportes_db_path()
+    if not os.path.isfile(reportes_path):
+        raise HTTPException(status_code=404, detail="No report data found")
+    conn = sqlite3.connect(reportes_path)
+    if request:
+        cur = conn.execute(
+            "SELECT content FROM reportes WHERE network = ? AND request = ? ORDER BY created_at DESC LIMIT 1",
+            (network, request),
+        )
+    else:
+        cur = conn.execute(
+            "SELECT content FROM reportes WHERE network = ? ORDER BY created_at DESC LIMIT 1",
+            (network,),
+        )
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return JSONResponse(content={"network": network, "content": row[0]})
 
 
 # Mount static frontend last so /api/* is matched first

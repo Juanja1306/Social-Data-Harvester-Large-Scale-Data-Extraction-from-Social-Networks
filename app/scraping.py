@@ -109,6 +109,76 @@ def ensure_resultados_table(db_path):
     conn.close()
 
 
+def _ensure_reportes_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS reportes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            network TEXT NOT NULL,
+            request TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+
+
+def _ensure_analisis_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS analisis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            network TEXT NOT NULL,
+            request TEXT NOT NULL,
+            content_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+
+
+def ensure_reportes_table(db_path):
+    conn = sqlite3.connect(db_path)
+    _ensure_reportes_table(conn)
+    conn.close()
+
+
+def ensure_analisis_table(db_path):
+    conn = sqlite3.connect(db_path)
+    _ensure_analisis_table(conn)
+    conn.close()
+
+
+def _save_llm_outputs_to_db(network, request_value, reportes_db_path, analisis_db_path, report_filename, analisis_filename):
+    """Read reporte .txt and analisis .json from cwd and save to SQLite."""
+    root = os.getcwd()
+    report_path = os.path.join(root, report_filename)
+    analisis_path = os.path.join(root, analisis_filename)
+    created = datetime.now().isoformat()
+    if os.path.isfile(report_path):
+        with open(report_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        ensure_reportes_table(reportes_db_path)
+        conn = sqlite3.connect(reportes_db_path)
+        _ensure_reportes_table(conn)
+        conn.execute(
+            "INSERT INTO reportes (network, request, content, created_at) VALUES (?, ?, ?, ?)",
+            (network, request_value, content, created),
+        )
+        conn.commit()
+        conn.close()
+    if os.path.isfile(analisis_path):
+        with open(analisis_path, "r", encoding="utf-8") as f:
+            content_json = f.read()
+        ensure_analisis_table(analisis_db_path)
+        conn = sqlite3.connect(analisis_db_path)
+        _ensure_analisis_table(conn)
+        conn.execute(
+            "INSERT INTO analisis (network, request, content_json, created_at) VALUES (?, ?, ?, ?)",
+            (network, request_value, content_json, created),
+        )
+        conn.commit()
+        conn.close()
+
+
 def sqlite_writer_process(result_queue, stop_event, db_path, log_queue=None):
     """Proceso dedicado para escribir en SQLite (misma lógica que antes con CSV)."""
     conn = sqlite3.connect(db_path)
@@ -214,8 +284,18 @@ def run_scraper(network, query, max_posts, result_queue, stop_event, process_id,
         sys.stdout = old_stdout
 
 
-def run_llm_process(network, result_queue, csv_file="resultados.csv", log_queue=None):
-    """Proceso paralelo para ejecutar el LLM de una red social."""
+def run_llm_process(
+    network,
+    result_queue,
+    csv_file="resultados.csv",
+    log_queue=None,
+    request_value=None,
+    reportes_db_path=None,
+    analisis_db_path=None,
+    report_filename=None,
+    analisis_filename=None,
+):
+    """Proceso paralelo para ejecutar el LLM de una red social. Guarda reporte .txt y analisis .json en SQLite."""
     old_stdout = sys.stdout
     if log_queue is not None:
         sys.stdout = StreamToQueue(log_queue, prefix=f"[LLM-{network}] ")
@@ -239,6 +319,21 @@ def run_llm_process(network, result_queue, csv_file="resultados.csv", log_queue=
             result_queue.put((network, reporte))
         elif network == "Reddit":
             pass
+        if (
+            request_value
+            and reportes_db_path
+            and analisis_db_path
+            and report_filename
+            and analisis_filename
+        ):
+            _save_llm_outputs_to_db(
+                network,
+                request_value,
+                reportes_db_path,
+                analisis_db_path,
+                report_filename,
+                analisis_filename,
+            )
     except Exception as e:
         result_queue.put((network, f"Error crítico en LLM {network}: {e}"))
     finally:

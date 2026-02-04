@@ -117,6 +117,7 @@
   function renderReportsList(list) {
     if (!list || !list.length) return;
     reportsHint.classList.add("hidden");
+    llmRunning.classList.add("hidden");
     reportsTabs.classList.remove("hidden");
     reportsTabs.innerHTML = "";
     list.forEach((r) => {
