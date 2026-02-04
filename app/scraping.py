@@ -233,11 +233,56 @@ def export_request_to_csv(db_path, request_value):
     return path
 
 
+def optimize_query_for_network(query: str, network: str) -> str:
+    """
+    Optimiza la query selectivamente. 
+    Actualmente solo aplica reglas para Instagram (Auto-Hashtag + Sanitización).
+    Para el resto de redes, se respeta la query original (soporte nativo de comillas).
+    """
+    query = query.strip()
+    if not query:
+        return query
+
+    # 1. Instagram: Convertir términos simples a Hashtags automáticos
+    if network == "Instagram":
+        # PASO A: Sanitización (Quitar comillas y operadores que rompen Instagram)
+        # Si el usuario pone: "marketing digital" AND sales
+        # Instagram no entiende comillas ni AND. Lo limpiamos.
+        clean_q = query.replace('"', '').replace("'", "")
+        # Quitamos operadores booleanos comunes para evitar basura en el hashtag
+        for op in [" AND ", " OR ", " and ", " or "]:
+            clean_q = clean_q.replace(op, " ")
+        
+        clean_q = clean_q.strip()
+
+        # PASO B: Auto-Hashtag
+        # Si el usuario no puso # y es una frase corta, convertimos a tag.
+        if not clean_q.startswith("#"):
+            words = clean_q.split()
+            # Límite de 3 palabras para considerar que es un "concepto taggeable"
+            if len(words) <= 3:
+                return "#" + "".join(words).lower()
+            
+            # Si es muy largo, devolvemos la query limpia (sin comillas) 
+            # para que la búsqueda por keywords funcione mejor.
+            return clean_q
+                
+    return query
+
+
 def run_scraper(network, query, max_posts, result_queue, stop_event, process_id, log_queue=None):
     """Ejecutar scraper en proceso separado (Chromium headless=False, mismo login/cookies que main.py)."""
     old_stdout = sys.stdout
     if log_queue is not None:
         sys.stdout = StreamToQueue(log_queue, prefix=f"[{network}] ")
+
+    print(f"[{network}] Iniciando proceso {process_id} para query: '{query}'")
+
+    # --- OPTIMIZACIÓN DE QUERY (Solo Instagram) ---
+    optimized_query = optimize_query_for_network(query, network)
+    if optimized_query != query:
+        print(f"[{network}] ⚡ Query Auto-Optimizada: '{optimized_query}'")
+    # -----------------------------------------------
 
     try:
         with sync_playwright() as p:
@@ -251,23 +296,23 @@ def run_scraper(network, query, max_posts, result_queue, stop_event, process_id,
             try:
                 if network == "LinkedIn":
                     from process.Process_Linkedin import LinkedinScraper
-                    scraper = LinkedinScraper(query, result_queue, stop_event, max_posts)
+                    scraper = LinkedinScraper(optimized_query, result_queue, stop_event, max_posts)
                     scraper.run(page)
                 elif network == "Twitter":
                     from process.Process_Twitter import TwitterScraper
-                    scraper = TwitterScraper(query, result_queue, stop_event, max_posts)
+                    scraper = TwitterScraper(optimized_query, result_queue, stop_event, max_posts)
                     scraper.run(page)
                 elif network == "Reddit":
                     from process.Process_Reddit import RedditScraper
-                    scraper = RedditScraper(query, result_queue, stop_event, max_posts)
+                    scraper = RedditScraper(optimized_query, result_queue, stop_event, max_posts)
                     scraper.run(page)
                 elif network == "Instagram":
                     from process.Process_Instagram import InstagramScraper
-                    scraper = InstagramScraper(query, result_queue, stop_event, max_posts)
+                    scraper = InstagramScraper(optimized_query, result_queue, stop_event, max_posts)
                     scraper.run(page)
                 elif network == "Facebook":
                     from process.Process_Facebook import FacebookScraper
-                    scraper = FacebookScraper(query, result_queue, stop_event, max_posts)
+                    scraper = FacebookScraper(optimized_query, result_queue, stop_event, max_posts)
                     scraper.run(page)
             except Exception as e:
                 print(f"Error crítico en proceso {network}: {e}")
