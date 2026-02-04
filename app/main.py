@@ -421,19 +421,19 @@ async def get_llm_report(network: str, format: str = "text", request: str | None
     conn = sqlite3.connect(reportes_path)
     if request:
         cur = conn.execute(
-            "SELECT content FROM reportes WHERE network = ? AND request = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT content, request FROM reportes WHERE network = ? AND request = ? ORDER BY created_at DESC LIMIT 1",
             (network, request),
         )
     else:
         cur = conn.execute(
-            "SELECT content FROM reportes WHERE network = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT content, request FROM reportes WHERE network = ? ORDER BY created_at DESC LIMIT 1",
             (network,),
         )
     row = cur.fetchone()
     conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Report not found")
-    return JSONResponse(content={"network": network, "content": row[0]})
+    return JSONResponse(content={"network": network, "content": row[0], "request": row[1] or ""})
 
 
 # Mount static frontend last so /api/* is matched first

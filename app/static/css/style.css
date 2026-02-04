@@ -266,6 +266,23 @@ body {
 }
 
 /* Log area */
+.log-options {
+  margin-bottom: 0.5rem;
+}
+
+.log-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.log-options input[type="checkbox"] {
+  cursor: pointer;
+}
+
 .log-area {
   height: 260px;
   overflow-y: auto;
@@ -402,6 +419,17 @@ body {
   background: rgba(56, 189, 248, 0.2);
   color: var(--accent);
   border-color: var(--accent);
+}
+
+.report-title {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.report-title.hidden {
+  display: none;
 }
 
 .report-content {

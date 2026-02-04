@@ -21,6 +21,7 @@
   const llmRunning = document.getElementById("llmRunning");
   const reportsTabs = document.getElementById("reportsTabs");
   const reportContent = document.getElementById("reportContent");
+  const reportTitle = document.getElementById("reportTitle");
   const reportText = document.getElementById("reportText");
 
   function getSelectedNetworks() {
@@ -44,7 +45,11 @@
     div.className = "log-entry";
     div.innerHTML = `<span class="time">[${escapeHtml(entry.time || "")}]</span> ${escapeHtml(entry.message || "")}`;
     logArea.appendChild(div);
-    logArea.scrollTop = logArea.scrollHeight;
+    // Solo hacer scroll automático si el usuario marcó la casilla "autoScroll"
+    const autoScrollCb = document.getElementById("autoScroll");
+    if (autoScrollCb && autoScrollCb.checked) {
+      logArea.scrollTop = logArea.scrollHeight;
+    }
   }
 
   function connectLogWebSocket() {
@@ -118,6 +123,14 @@
         return r.json();
       })
       .then((data) => {
+        // Título para saber de qué request es el reporte
+        if (data.request) {
+          reportTitle.textContent = "Request: " + data.request;
+          reportTitle.classList.remove("hidden");
+        } else {
+          reportTitle.textContent = "Red: " + network;
+          reportTitle.classList.remove("hidden");
+        }
         if (fmt === "json") {
           reportText.textContent = JSON.stringify(data, null, 2);
         } else {
@@ -126,6 +139,8 @@
         reportContent.classList.remove("hidden");
       })
       .catch(() => {
+        reportTitle.textContent = "Red: " + network + " (sin reporte)";
+        reportTitle.classList.remove("hidden");
         reportText.textContent = "No hay reporte para esta red. Ejecuta el análisis LLM seleccionando " + network + " para generarlo.";
         reportContent.classList.remove("hidden");
       });
