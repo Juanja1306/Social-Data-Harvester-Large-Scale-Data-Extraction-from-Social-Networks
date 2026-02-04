@@ -11,3 +11,4 @@ facebook_cookies.json
 *.json
 *.html
 nlp_outputs/
+*db
