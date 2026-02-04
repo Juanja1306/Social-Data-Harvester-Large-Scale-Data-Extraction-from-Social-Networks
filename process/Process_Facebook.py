@@ -3,6 +3,7 @@ import random
 from datetime import datetime
 import json
 import os
+from urllib.parse import quote
 
 class FacebookScraper:
     def __init__(self, search_query, result_queue, stop_event, max_posts=50):
@@ -69,9 +70,9 @@ class FacebookScraper:
                     return
                 self.saveSessionCookies(browserPage)
 
-            # Buscamos el tema
+            # Buscamos el tema (comillas dobles para frase exacta)
             cleanQuery = self.query.replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
-            searchUrl = f"https://www.facebook.com/search/posts/?q={cleanQuery}"
+            searchUrl = f"https://www.facebook.com/search/posts/?q={quote(f'\"{cleanQuery}\"')}"
             
             print(f"[Facebook] Navegando a: {searchUrl}")
             browserPage.goto(searchUrl)

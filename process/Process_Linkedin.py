@@ -3,6 +3,7 @@ import random
 from datetime import datetime
 import json
 import os
+from urllib.parse import quote
 
 
 class LinkedinScraper:
@@ -291,8 +292,8 @@ class LinkedinScraper:
             # 5. Proceder a la búsqueda (Scraping Normal)
 
 
-            # Búsqueda
-            search_url = f"https://www.linkedin.com/search/results/content/?keywords={self.query}"
+            # Búsqueda (comillas dobles para frase exacta)
+            search_url = f"https://www.linkedin.com/search/results/content/?keywords={quote(f'\"{self.query}\"')}"
             print(f"[LinkedIn] Navegando a: {search_url}")
             page.goto(search_url)
             self.random_sleep(3, 5)
