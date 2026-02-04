@@ -2,8 +2,8 @@
 
 import os
 
-# CSV output (relative to project root - run uvicorn from project root)
-CSV_FILENAME = "resultados.csv"
+# SQLite database (relative to project root - run uvicorn from project root)
+DATABASE_FILENAME = "resultados.db"
 
 # Default networks (same as main.py)
 DEFAULT_NETWORKS = ["LinkedIn", "Instagram", "Facebook", "Twitter"]
@@ -17,6 +17,6 @@ STOP_JOIN_TIMEOUT = 5
 # LLM networks for sentiment analysis
 LLM_NETWORKS = ["LinkedIn", "Instagram", "Twitter", "Facebook"]
 
-# Resolve CSV path: use project root (cwd when running uvicorn)
-def get_csv_path():
-    return os.path.join(os.getcwd(), CSV_FILENAME)
+# Resolve DB path: use project root (cwd when running uvicorn)
+def get_db_path():
+    return os.path.join(os.getcwd(), DATABASE_FILENAME)

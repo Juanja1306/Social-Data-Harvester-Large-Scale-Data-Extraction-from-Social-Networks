@@ -1,15 +1,28 @@
 """
 Scraping logic for FastAPI app.
 Reuses the same process-based scraping as main.py (Playwright headless=False, cookie/login unchanged).
+Stores results in SQLite; same columns as former CSV.
 """
 import csv
 import os
 import queue
 import re
 import sys
+import sqlite3
+import tempfile
 from multiprocessing import Process, Queue, Event
 from datetime import datetime
 from playwright.sync_api import sync_playwright
+
+RESULT_COLUMNS = [
+    "RedSocial",
+    "IDP",
+    "Request",
+    "FechaPeticion",
+    "FechaPublicacion",
+    "idPublicacion",
+    "Data",
+]
 
 
 class StreamToQueue:
@@ -72,42 +85,89 @@ def clean_text(text):
     return text
 
 
-def csv_writer_process(result_queue, stop_event, filename="resultados.csv", log_queue=None):
-    """Proceso dedicado para escribir en CSV (evita condición de carrera)."""
-    fieldnames = [
-        "RedSocial",
-        "IDP",
-        "Request",
-        "FechaPeticion",
-        "FechaPublicacion",
-        "idPublicacion",
-        "Data",
-    ]
-    file_exists = os.path.exists(filename) and os.path.getsize(filename) > 0
+def _ensure_table(conn):
+    """Create resultados table if not exists (same structure as former CSV)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS resultados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            RedSocial TEXT,
+            IDP INTEGER,
+            Request TEXT,
+            FechaPeticion TEXT,
+            FechaPublicacion TEXT,
+            idPublicacion TEXT,
+            Data TEXT
+        )
+    """)
+    conn.commit()
 
-    with open(filename, "a", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        if not file_exists:
-            writer.writeheader()
 
-        while not stop_event.is_set() or not result_queue.empty():
-            try:
-                data = result_queue.get(timeout=1)
-                cleaned_data = {
-                    key: clean_text(value) if isinstance(value, str) else value
-                    for key, value in data.items()
-                }
-                writer.writerow(cleaned_data)
-                csvfile.flush()
-                if log_queue is not None:
-                    try:
-                        log_queue.put_nowait(
-                            f"✓ {data.get('RedSocial', '?')}: {data.get('idPublicacion', '?')}"
-                        )
-                    except queue.Full:
-                        pass
-            except queue.Empty:
-                continue
+def ensure_resultados_table(db_path):
+    """Ensure DB file and resultados table exist (for listing requests / empty DB)."""
+    conn = sqlite3.connect(db_path)
+    _ensure_table(conn)
+    conn.close()
+
+
+def sqlite_writer_process(result_queue, stop_event, db_path, log_queue=None):
+    """Proceso dedicado para escribir en SQLite (misma lógica que antes con CSV)."""
+    conn = sqlite3.connect(db_path)
+    _ensure_table(conn)
+    while not stop_event.is_set() or not result_queue.empty():
+        try:
+            data = result_queue.get(timeout=1)
+            cleaned = {
+                k: clean_text(v) if isinstance(v, str) else v
+                for k, v in data.items()
+            }
+            conn.execute(
+                """INSERT INTO resultados (RedSocial, IDP, Request, FechaPeticion, FechaPublicacion, idPublicacion, Data)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    cleaned.get("RedSocial"),
+                    cleaned.get("IDP"),
+                    cleaned.get("Request"),
+                    cleaned.get("FechaPeticion"),
+                    cleaned.get("FechaPublicacion"),
+                    cleaned.get("idPublicacion"),
+                    cleaned.get("Data"),
+                ),
+            )
+            conn.commit()
+            if log_queue is not None:
+                try:
+                    log_queue.put(
+                        f"✓ {data.get('RedSocial', '?')}: {data.get('idPublicacion', '?')}",
+                        block=False,
+                    )
+                except queue.Full:
+                    pass
+        except queue.Empty:
+            continue
+    conn.close()
+
+
+def export_request_to_csv(db_path, request_value):
+    """
+    Export rows for the given Request from SQLite to a temp CSV file.
+    Returns path to temp CSV (same columns as before). Caller should delete when done.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cur = conn.execute(
+        "SELECT RedSocial, IDP, Request, FechaPeticion, FechaPublicacion, idPublicacion, Data FROM resultados WHERE Request = ? ORDER BY id",
+        (request_value,),
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    if not rows:
+        return None
+    fd, path = tempfile.mkstemp(suffix=".csv", prefix="llm_export_")
+    with os.fdopen(fd, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=RESULT_COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
 
 
 def run_scraper(network, query, max_posts, result_queue, stop_event, process_id, log_queue=None):

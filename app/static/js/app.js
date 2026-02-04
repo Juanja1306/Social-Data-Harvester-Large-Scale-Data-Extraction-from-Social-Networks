@@ -10,6 +10,8 @@
   const logArea = document.getElementById("logArea");
   const statusBar = document.getElementById("statusBar");
   const linkDownload = document.getElementById("linkDownload");
+  const downloadRequest = document.getElementById("downloadRequest");
+  const llmRequest = document.getElementById("llmRequest");
   const btnLLM = document.getElementById("btnLLM");
   const reportsSection = document.getElementById("reportsSection");
   const reportsHint = document.getElementById("reportsHint");
@@ -167,6 +169,33 @@
     }
   }
 
+  function fetchRequests() {
+    fetch(API + "/requests")
+      .then((r) => r.json())
+      .then((data) => {
+        const list = data.requests || [];
+        const requestListEl = document.getElementById("requestList");
+        requestListEl.innerHTML = "";
+        list.forEach((req) => {
+          const opt = document.createElement("option");
+          opt.value = req;
+          requestListEl.appendChild(opt);
+        });
+        const optionsHtml = list.map((req) => `<option value="${escapeHtml(req)}">${escapeHtml(req)}</option>`).join("");
+        downloadRequest.innerHTML = "<option value=\"\">-- Todos --</option>" + optionsHtml;
+        llmRequest.innerHTML = "<option value=\"\">-- Selecciona un Request --</option>" + optionsHtml;
+        updateDownloadLink();
+      })
+      .catch(() => {});
+  }
+
+  function updateDownloadLink() {
+    const req = downloadRequest.value;
+    linkDownload.href = API + "/results" + (req ? "?request=" + encodeURIComponent(req) : "");
+  }
+
+  downloadRequest.addEventListener("change", updateDownloadLink);
+
   btnStart.addEventListener("click", function () {
     const query = queryEl.value.trim();
     if (!query) {
@@ -200,6 +229,7 @@
         logArea.innerHTML = "";
         startPolling();
         fetchStatus();
+        fetchRequests();
       })
       .catch((err) => {
         alert("Error: " + (err.message || err));
@@ -218,11 +248,17 @@
   });
 
   btnLLM.addEventListener("click", function () {
+    const request = (llmRequest.value || "").trim();
+    if (!request) {
+      alert("Selecciona un Request para analizar (el tema del que quieres el análisis de sentimientos).");
+      return;
+    }
     btnLLM.disabled = true;
     fetch(API + "/llm/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        request: request,
         networks: getSelectedNetworks().filter((n) =>
           ["LinkedIn", "Instagram", "Twitter", "Facebook"].includes(n)
         ),
@@ -245,6 +281,7 @@
   });
 
   logArea.innerHTML = "";
+  fetchRequests();
   fetchStatus();
   fetchReportsList();
 })();

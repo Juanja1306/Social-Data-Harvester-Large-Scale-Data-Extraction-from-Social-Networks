@@ -1,23 +1,27 @@
 """
 FastAPI backend for Social Data Harvester.
 Serves API + static frontend. Run from project root: uvicorn app.main:app --reload
+Stores results in SQLite; Request = search query (tema) for grouping.
 """
+import io
 import os
 import csv
+import sqlite3
+import tempfile
 from datetime import datetime
 from multiprocessing import Process, Queue, Event
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.config import (
-    CSV_FILENAME,
+    DATABASE_FILENAME,
     DEFAULT_NETWORKS,
     LLM_NETWORKS,
     STOP_JOIN_TIMEOUT,
-    get_csv_path,
+    get_db_path,
 )
 from app import scraping
 
@@ -107,12 +111,12 @@ async def scrape_start(body: ScrapeStartBody):
         }
     )
 
-    # Start writer process (uses project root CSV path)
-    csv_path = get_csv_path()
+    # Start writer process (SQLite at project root)
+    db_path = get_db_path()
     writer_process = Process(
-        target=scraping.csv_writer_process,
+        target=scraping.sqlite_writer_process,
         args=(result_queue, stop_event),
-        kwargs={"filename": csv_path, "log_queue": log_queue},
+        kwargs={"db_path": db_path, "log_queue": log_queue},
     )
     writer_process.start()
     scrape_state["writer_process"] = writer_process
@@ -164,7 +168,7 @@ async def scrape_stop():
     scrape_state["log_entries"].append(
         {
             "time": datetime.now().strftime("%H:%M:%S"),
-            "message": "Búsqueda detenida. Datos guardados en resultados.csv",
+            "message": "Búsqueda detenida. Datos guardados en resultados.db",
         }
     )
     return {"status": "stopped"}
@@ -182,38 +186,81 @@ async def scrape_status():
     }
 
 
+def _get_results_from_db(request_value=None):
+    """Read rows from SQLite, optionally filtered by Request. Returns list of dicts."""
+    db_path = get_db_path()
+    if not os.path.isfile(db_path):
+        return []
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    if request_value:
+        cur = conn.execute(
+            "SELECT RedSocial, IDP, Request, FechaPeticion, FechaPublicacion, idPublicacion, Data FROM resultados WHERE Request = ? ORDER BY id",
+            (request_value,),
+        )
+    else:
+        cur = conn.execute(
+            "SELECT RedSocial, IDP, Request, FechaPeticion, FechaPublicacion, idPublicacion, Data FROM resultados ORDER BY id",
+        )
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+@app.get("/api/requests")
+async def list_requests():
+    """List distinct Request values (search themes) for selector."""
+    db_path = get_db_path()
+    scraping.ensure_resultados_table(db_path)
+    conn = sqlite3.connect(db_path)
+    cur = conn.execute("SELECT DISTINCT Request FROM resultados WHERE Request IS NOT NULL AND Request != '' ORDER BY Request")
+    requests = [r[0] for r in cur.fetchall()]
+    conn.close()
+    return {"requests": requests}
+
+
 @app.get("/api/results")
-async def get_results(format: str = "csv"):
-    """Return resultados.csv as file (format=csv) or as JSON (format=json)."""
-    csv_path = get_csv_path()
-    if not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0:
-        raise HTTPException(status_code=404, detail="No results file or file is empty")
+async def get_results(format: str = "csv", request: str | None = None):
+    """Return results from SQLite. Optional ?request= to filter by Request (tema)."""
+    rows = _get_results_from_db(request_value=request)
+    if not rows:
+        raise HTTPException(status_code=404, detail="No results found" + (" for that Request." if request else "."))
     if format == "json":
-        rows = []
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                rows.append(row)
         return JSONResponse(content=rows)
-    return FileResponse(
-        csv_path,
+    buf = io.StringIO()
+    writer = csv.DictWriter(
+        buf,
+        fieldnames=["RedSocial", "IDP", "Request", "FechaPeticion", "FechaPublicacion", "idPublicacion", "Data"],
+    )
+    writer.writeheader()
+    writer.writerows(rows)
+    filename = DATABASE_FILENAME.replace(".db", ".csv")
+    return Response(
+        content=buf.getvalue().encode("utf-8"),
         media_type="text/csv",
-        filename=CSV_FILENAME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
 class LLMAnalyzeBody(BaseModel):
+    request: str = Field(..., min_length=1, description="Request (tema) to analyze - select from existing")
     networks: list[str] = Field(default_factory=lambda: list(LLM_NETWORKS))
 
 
 @app.post("/api/llm/analyze")
 async def llm_analyze(body: LLMAnalyzeBody):
-    """Start LLM sentiment analysis in background. Reports written to project root."""
-    csv_path = get_csv_path()
-    if not os.path.exists(csv_path):
+    """Start LLM sentiment analysis in background for the selected Request. Reports written to project root."""
+    db_path = get_db_path()
+    if not os.path.isfile(db_path):
         raise HTTPException(
             status_code=400,
-            detail="No resultados.csv found. Run scraping first.",
+            detail="No hay datos en la base. Ejecuta una búsqueda primero.",
+        )
+    csv_path = scraping.export_request_to_csv(db_path, body.request.strip())
+    if not csv_path:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No hay resultados para el Request '{body.request}'. Selecciona otro o ejecuta una búsqueda con ese tema.",
         )
     networks = body.networks or LLM_NETWORKS
     llm_queue = Queue()
@@ -235,12 +282,13 @@ async def llm_analyze(body: LLMAnalyzeBody):
     scrape_state["log_entries"].append(
         {
             "time": datetime.now().strftime("%H:%M:%S"),
-            "message": f"Análisis LLM iniciado: {', '.join(networks)}",
+            "message": f"Análisis LLM iniciado para Request '{body.request}': {', '.join(networks)}",
         }
     )
     return {
         "status": "started",
         "message": "Análisis LLM en segundo plano. Los reportes se muestran abajo cuando terminen.",
+        "request": body.request,
         "networks": [n for n in networks if n in LLM_NETWORKS],
     }
 
