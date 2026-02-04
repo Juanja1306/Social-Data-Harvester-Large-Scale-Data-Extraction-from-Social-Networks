@@ -3,7 +3,9 @@ FastAPI backend for Social Data Harvester.
 Serves API + static frontend. Run from project root: uvicorn app.main:app --reload
 Stores results in SQLite; Request = search query (tema) for grouping.
 """
+import asyncio
 import io
+import json as json_mod
 import os
 import csv
 import sqlite3
@@ -11,7 +13,7 @@ import tempfile
 from datetime import datetime
 from multiprocessing import Process, Queue, Event
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -28,6 +30,11 @@ from app.config import (
 from app import scraping
 
 app = FastAPI(title="Social Data Harvester API", version="1.0.0")
+
+
+@app.on_event("startup")
+async def startup():
+    asyncio.create_task(log_broadcast_loop())
 
 # Report file mapping (project root)
 LLM_REPORT_FILES = {
@@ -50,7 +57,11 @@ scrape_state = {
     "llm_running": False,
     "llm_processes": [],
     "llm_log_queue": None,
+    "log_last_broadcasted": 0,
 }
+
+# WebSocket connections for log (evitar parpadeo: solo se envían entradas nuevas)
+ws_log_connections: list[WebSocket] = []
 
 
 def drain_log_queue():
@@ -73,6 +84,32 @@ def drain_log_queue():
     scrape_state["llm_processes"] = alive
     if not alive and scrape_state.get("llm_running"):
         scrape_state["llm_running"] = False
+
+
+async def broadcast_log_entry(entry: dict):
+    """Envía una entrada de log a todos los clientes WebSocket."""
+    msg = json_mod.dumps(entry, ensure_ascii=False)
+    dead = []
+    for ws in ws_log_connections:
+        try:
+            await ws.send_text(msg)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        if ws in ws_log_connections:
+            ws_log_connections.remove(ws)
+
+
+async def log_broadcast_loop():
+    """Tarea en segundo plano: drena la cola de log y envía nuevas entradas por WebSocket."""
+    while True:
+        await asyncio.sleep(0.3)
+        drain_log_queue()
+        entries = scrape_state["log_entries"]
+        last = scrape_state["log_last_broadcasted"]
+        for i in range(last, len(entries)):
+            await broadcast_log_entry(entries[i])
+        scrape_state["log_last_broadcasted"] = len(entries)
 
 
 # --- Pydantic models ---
@@ -178,14 +215,30 @@ async def scrape_stop():
 
 @app.get("/api/scrape/status")
 async def scrape_status():
-    """Return running state, networks, and log (drains log_queue into log_entries)."""
+    """Return running state, networks (log se recibe por WebSocket para evitar parpadeo)."""
     drain_log_queue()
     return {
         "running": scrape_state["running"],
         "networks": scrape_state["networks"],
-        "log": scrape_state["log_entries"],
         "llm_running": scrape_state["llm_running"],
     }
+
+
+@app.websocket("/ws/log")
+async def websocket_log(websocket: WebSocket):
+    """WebSocket para recibir entradas de log en tiempo real (solo nuevas, sin parpadeo)."""
+    await websocket.accept()
+    ws_log_connections.append(websocket)
+    try:
+        for entry in scrape_state["log_entries"]:
+            await websocket.send_text(json_mod.dumps(entry, ensure_ascii=False))
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if websocket in ws_log_connections:
+            ws_log_connections.remove(websocket)
 
 
 def _get_results_from_db(request_value=None):
@@ -360,7 +413,6 @@ async def get_llm_report(network: str, format: str = "text", request: str | None
         conn.close()
         if not row:
             raise HTTPException(status_code=404, detail="Report not found")
-        import json as json_mod
         data = json_mod.loads(row[0])
         return JSONResponse(content=data)
     reportes_path = get_reportes_db_path()

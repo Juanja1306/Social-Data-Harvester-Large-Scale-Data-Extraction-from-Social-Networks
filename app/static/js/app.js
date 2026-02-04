@@ -1,7 +1,10 @@
 (function () {
   const API = "/api";
+  const WS_PROTOCOL = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const WS_BASE = WS_PROTOCOL + "//" + window.location.host;
   let pollInterval = null;
   let reportPollInterval = null;
+  let logWs = null;
 
   const queryEl = document.getElementById("query");
   const maxPostsEl = document.getElementById("max_posts");
@@ -36,16 +39,33 @@
     return div.innerHTML;
   }
 
-  function renderLog(entries) {
-    logArea.innerHTML = "";
-    if (!entries || !entries.length) return;
-    entries.forEach((entry) => {
-      const div = document.createElement("div");
-      div.className = "log-entry";
-      div.innerHTML = `<span class="time">[${entry.time}]</span> ${escapeHtml(entry.message)}`;
-      logArea.appendChild(div);
-    });
+  function appendLogEntry(entry) {
+    const div = document.createElement("div");
+    div.className = "log-entry";
+    div.innerHTML = `<span class="time">[${escapeHtml(entry.time || "")}]</span> ${escapeHtml(entry.message || "")}`;
+    logArea.appendChild(div);
     logArea.scrollTop = logArea.scrollHeight;
+  }
+
+  function connectLogWebSocket() {
+    if (logWs && logWs.readyState === WebSocket.OPEN) return;
+    logWs = new WebSocket(WS_BASE + "/ws/log");
+    logWs.onopen = function () {};
+    logWs.onmessage = function (event) {
+      try {
+        const entry = JSON.parse(event.data);
+        appendLogEntry(entry);
+      } catch (e) {
+        console.warn("Log WS parse error", e);
+      }
+    };
+    logWs.onclose = function () {
+      logWs = null;
+      setTimeout(connectLogWebSocket, 2000);
+    };
+    logWs.onerror = function () {
+      logWs.close();
+    };
   }
 
   function updateUIFromStatus(data) {
@@ -54,9 +74,6 @@
     btnStart.disabled = running;
     btnStop.disabled = !running;
     setStatus(running ? "Estado: Scraping activo..." : "Estado: Inactivo", running);
-    if (data.log && data.log.length > 0) {
-      renderLog(data.log);
-    }
     if (llmRunningState) {
       llmRunning.classList.remove("hidden");
       startReportPolling();
@@ -109,7 +126,7 @@
         reportContent.classList.remove("hidden");
       })
       .catch(() => {
-        reportText.textContent = "No hay contenido para este reporte.";
+        reportText.textContent = "No hay reporte para esta red. Ejecuta el análisis LLM seleccionando " + network + " para generarlo.";
         reportContent.classList.remove("hidden");
       });
   }
@@ -120,13 +137,13 @@
     llmRunning.classList.add("hidden");
     reportsTabs.classList.remove("hidden");
     reportsTabs.innerHTML = "";
-    list.forEach((r) => {
-      if (!r.has_text && !r.has_json) return;
+    list.forEach((r, index) => {
       const tab = document.createElement("button");
       tab.type = "button";
-      tab.className = "report-tab";
+      tab.className = "report-tab" + (index === 0 ? " active" : "");
       tab.textContent = r.network;
       tab.dataset.network = r.network;
+      tab.dataset.hasData = (r.has_text || r.has_json) ? "1" : "0";
       tab.addEventListener("click", function () {
         reportsTabs.querySelectorAll(".report-tab").forEach((t) => t.classList.remove("active"));
         tab.classList.add("active");
@@ -134,11 +151,8 @@
       });
       reportsTabs.appendChild(tab);
     });
-    const first = list.find((r) => r.has_text || r.has_json);
-    if (first) {
-      reportsTabs.querySelector(`[data-network="${first.network}"]`)?.classList.add("active");
-      loadReport(first.network, "text");
-    }
+    const first = list[0];
+    if (first) loadReport(first.network, "text");
   }
 
   function fetchReportsList() {
@@ -146,8 +160,7 @@
       .then((r) => r.json())
       .then((data) => {
         const list = data.reports || [];
-        const available = list.filter((r) => r.has_text || r.has_json);
-        if (available.length > 0) {
+        if (list.length > 0) {
           renderReportsList(list);
           stopReportPolling();
         }
@@ -227,7 +240,6 @@
       .then(() => {
         setStatus("Estado: Scraping activo...", true);
         btnStop.disabled = false;
-        logArea.innerHTML = "";
         startPolling();
         fetchStatus();
         fetchRequests();
@@ -281,7 +293,7 @@
       });
   });
 
-  logArea.innerHTML = "";
+  connectLogWebSocket();
   fetchRequests();
   fetchStatus();
   fetchReportsList();
