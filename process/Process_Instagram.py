@@ -382,30 +382,46 @@ class InstagramScraper:
 
     def _extract_comments(self, page):
         """
-        Extrae comentarios iterando el botón 'Ver más' para maximizar la captura.
+        Extrae TODOS los comentarios visibles iterando el botón 'Ver más' indefinidamente
+        hasta que desaparezca o se alcance un límite de seguridad.
         """
         comments = []
         try:
-            # Estrategia de Carga Agresiva:
-            # Clickear "+" hasta que desaparezca o lleguemos a un límite seguro (ej. 5 intentos)
-            max_load_attempts = 5 
+            # Estrategia de Carga MAXIMA:
+            # Clickear "+" hasta que ya no exista el botón.
+            # Límite de seguridad: 100 clicks (aprox 1000+ comentarios) para evitar bucles infinitos en posts virales.
+            max_clicks_safety = 50 
+            clicks_done = 0
             
-            print(f"[Instagram] Intentando cargar más comentarios (Max {max_load_attempts} intentos)...")
+            print(f"[Instagram] Iniciando carga PROFUNDA de comentarios...")
             
-            for _ in range(max_load_attempts):
+            while clicks_done < max_clicks_safety:
                 if self.stop_event.is_set(): break
                 
                 try:
                     # Buscamos botones circulares con SVG de más o textos de "View all"
                     plus_buttons = page.locator('svg[aria-label="Cargar más comentarios"], svg[aria-label="Load more comments"]')
+                    
                     if plus_buttons.count() > 0 and plus_buttons.first.is_visible():
                         plus_buttons.first.click(timeout=1000)
-                        time.sleep(1.2) # Espera para carga
-                        page.mouse.wheel(0, 400) # Scroll para forzar render
+                        clicks_done += 1
+                        
+                        # Feedback visual en consola cada 5 clicks
+                        if clicks_done % 5 == 0:
+                            print(f"[Instagram] Cargando más... (Click #{clicks_done})")
+                        
+                        # Espera dinámica: Si hay muchos comentarios, la carga puede ser más lenta
+                        time.sleep(1.5) 
+                        page.mouse.wheel(0, 300) # Scroll para forzar render
                     else:
+                        print("[Instagram] No hay más comentarios para cargar.")
                         break # No hay más botones
                 except:
+                    # Si falla un click (ej. red), intentamos una vez más y si no, salimos
                     break
+            
+            if clicks_done >= max_clicks_safety:
+                print(f"[Instagram] Límite de seguridad alcanzado ({max_clicks_safety} cargas). Deteniendo carga.")
 
             # Pequeño scroll final
             page.mouse.wheel(0, 500)
@@ -415,8 +431,8 @@ class InstagramScraper:
             elements = page.locator('ul li span[dir="auto"]')
             count = elements.count()
             
-            # Aumentamos límite de extracción
-            limit = min(count, 100) 
+            # Aumentamos límite de extracción para capturar la carga profunda
+            limit = min(count, 500) 
             
             seen = set()
             ignore_list = {"responder", "reply", "ver traducción", "see translation", "likes", "me gusta", "respuestas", "replying to"}
