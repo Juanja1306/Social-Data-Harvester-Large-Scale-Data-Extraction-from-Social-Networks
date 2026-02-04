@@ -10,5 +10,6 @@ instagram_cookies.json
 facebook_cookies.json
 *.json
 nlp_outputs/
+images/
 *db
 reporte_linkedin_deepseek.txt

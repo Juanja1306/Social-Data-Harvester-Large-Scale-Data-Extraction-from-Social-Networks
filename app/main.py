@@ -7,6 +7,7 @@ import asyncio
 import io
 import json as json_mod
 import os
+import re
 import csv
 import sqlite3
 import tempfile
@@ -28,6 +29,7 @@ from app.config import (
     get_analisis_db_path,
 )
 from app import scraping
+from app import charts
 
 app = FastAPI(title="Social Data Harvester API", version="1.0.0")
 
@@ -35,6 +37,9 @@ app = FastAPI(title="Social Data Harvester API", version="1.0.0")
 @app.on_event("startup")
 async def startup():
     asyncio.create_task(log_broadcast_loop())
+
+# Carpeta de gráficas (project root)
+IMAGES_DIR = os.path.join(os.getcwd(), "images")
 
 # Report file mapping (project root)
 LLM_REPORT_FILES = {
@@ -434,6 +439,67 @@ async def get_llm_report(network: str, format: str = "text", request: str | None
     if not row:
         raise HTTPException(status_code=404, detail="Report not found")
     return JSONResponse(content={"network": network, "content": row[0], "request": row[1] or ""})
+
+
+class ChartsGenerateBody(BaseModel):
+    request: str | None = Field(default=None, description="Request (tema) para el que generar gráficas; si no se envía, se generan para todos los requests.")
+
+
+def _build_chart_image_list(generated_paths: list[str]) -> list[dict]:
+    """Convierte rutas absolutas en lista { folder, file, title } para la galería."""
+    images = []
+    for p in generated_paths:
+        try:
+            rel = os.path.relpath(p, IMAGES_DIR)
+            if rel.startswith("..") or os.path.isabs(rel):
+                continue
+            folder, filename = os.path.split(rel)
+            if not folder or not filename or ".." in folder or ".." in filename:
+                continue
+            title = filename.replace("_", " ").replace(".png", "")
+            images.append({"folder": folder, "file": filename, "title": title})
+        except (ValueError, TypeError):
+            continue
+    return images
+
+
+@app.get("/api/charts/image/{folder}/{filename}")
+async def serve_chart_image(folder: str, filename: str):
+    """Sirve una imagen de la carpeta images/<folder>/<filename> (solo nombres seguros)."""
+    if ".." in folder or ".." in filename or "/" in folder or "\\" in folder or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    if not re.match(r"^[a-zA-Z0-9_-]+$", folder) or not re.match(r"^[a-zA-Z0-9_.-]+$", filename):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    path = os.path.join(IMAGES_DIR, folder, filename)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(path, media_type="image/png")
+
+
+@app.post("/api/charts/generate")
+async def generate_charts(body: ChartsGenerateBody):
+    """Genera gráficas a partir de resultados.db y analisis.db y las guarda en images/<request>/."""
+    db_path = get_db_path()
+    analisis_path = get_analisis_db_path()
+    os.makedirs(IMAGES_DIR, exist_ok=True)
+    request_val = (body.request or "").strip() or None
+    if request_val:
+        generated = charts.generate_charts_for_request(
+            request_val, db_path, analisis_path, IMAGES_DIR
+        )
+    else:
+        generated = charts.generate_charts_all_requests(db_path, analisis_path, IMAGES_DIR)
+    if not generated:
+        raise HTTPException(
+            status_code=400,
+            detail="No hay datos para generar gráficas. Ejecuta búsquedas y/o análisis LLM primero.",
+        )
+    images = _build_chart_image_list(generated)
+    return {
+        "generated": generated,
+        "images": images,
+        "message": f"Se guardaron {len(generated)} gráficas en la carpeta images.",
+    }
 
 
 # Mount static frontend last so /api/* is matched first

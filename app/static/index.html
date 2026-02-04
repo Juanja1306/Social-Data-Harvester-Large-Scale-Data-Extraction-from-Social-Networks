@@ -67,6 +67,14 @@
         </select>
         <button type="button" id="btnLLM" class="btn btn-accent">Ejecutar análisis LLM (sentimientos)</button>
       </div>
+      <div class="form-row charts-row">
+        <label for="chartsRequest">Gráficas por Request:</label>
+        <select id="chartsRequest">
+          <option value="">-- Todos los requests --</option>
+        </select>
+        <button type="button" id="btnCharts" class="btn btn-secondary">Generar gráficas</button>
+      </div>
+      <p class="charts-hint" id="chartsHint">Las gráficas se guardan en la carpeta <code>images/</code>, organizadas por request.</p>
     </section>
 
     <section class="reports card animate-in" id="reportsSection" style="--i: 4">
@@ -80,6 +88,26 @@
       <h3 id="reportTitle" class="report-title hidden"></h3>
       <div id="reportContent" class="report-content hidden">
         <pre id="reportText"></pre>
+      </div>
+    </section>
+
+    <section class="charts-gallery card animate-in hidden" id="chartsGallerySection" style="--i: 5">
+      <h2>Galería de gráficas</h2>
+      <p class="gallery-hint" id="galleryHint">Genera gráficas para verlas aquí. Navega con las flechas.</p>
+      <div id="chartsCarousel" class="charts-carousel hidden">
+        <div class="carousel-inner">
+          <button type="button" id="carouselPrev" class="carousel-btn carousel-prev" aria-label="Anterior">
+            <span class="carousel-arrow">‹</span>
+          </button>
+          <div class="carousel-viewport">
+            <div id="carouselTrack" class="carousel-track"></div>
+          </div>
+          <button type="button" id="carouselNext" class="carousel-btn carousel-next" aria-label="Siguiente">
+            <span class="carousel-arrow">›</span>
+          </button>
+        </div>
+        <div id="carouselCaption" class="carousel-caption"></div>
+        <div id="carouselDots" class="carousel-dots"></div>
       </div>
     </section>
   </div>

@@ -213,6 +213,8 @@
         const optionsHtml = list.map((req) => `<option value="${escapeHtml(req)}">${escapeHtml(req)}</option>`).join("");
         downloadRequest.innerHTML = "<option value=\"\">-- Todos --</option>" + optionsHtml;
         llmRequest.innerHTML = "<option value=\"\">-- Selecciona un Request --</option>" + optionsHtml;
+        const chartsRequestEl = document.getElementById("chartsRequest");
+        if (chartsRequestEl) chartsRequestEl.innerHTML = "<option value=\"\">-- Todos los requests --</option>" + optionsHtml;
         updateDownloadLink();
       })
       .catch(() => {});
@@ -307,6 +309,123 @@
         btnLLM.disabled = false;
       });
   });
+
+  let galleryImages = [];
+  let carouselIndex = 0;
+  const chartsGallerySection = document.getElementById("chartsGallerySection");
+  const galleryHint = document.getElementById("galleryHint");
+  const chartsCarousel = document.getElementById("chartsCarousel");
+  const carouselTrack = document.getElementById("carouselTrack");
+  const carouselCaption = document.getElementById("carouselCaption");
+  const carouselDots = document.getElementById("carouselDots");
+  const carouselPrev = document.getElementById("carouselPrev");
+  const carouselNext = document.getElementById("carouselNext");
+
+  function imageUrl(item) {
+    return API + "/charts/image/" + encodeURIComponent(item.folder) + "/" + encodeURIComponent(item.file);
+  }
+
+  function showCarouselSlide(index) {
+    if (!galleryImages.length) return;
+    carouselIndex = (index + galleryImages.length) % galleryImages.length;
+    const item = galleryImages[carouselIndex];
+    const img = document.getElementById("carouselImage");
+    if (img) {
+      img.src = imageUrl(item);
+      img.alt = item.title;
+    }
+    if (carouselCaption) carouselCaption.textContent = item.title;
+    if (carouselDots) {
+      carouselDots.querySelectorAll(".carousel-dot").forEach((el, i) => {
+        el.classList.toggle("active", i === carouselIndex);
+      });
+    }
+  }
+
+  function renderGallery(images) {
+    galleryImages = images || [];
+    if (!chartsGallerySection || !chartsCarousel) return;
+    if (!galleryImages.length) {
+      chartsCarousel.classList.add("hidden");
+      if (galleryHint) galleryHint.classList.remove("hidden");
+      return;
+    }
+    if (galleryHint) galleryHint.classList.add("hidden");
+    chartsCarousel.classList.remove("hidden");
+    carouselTrack.innerHTML = "";
+    const img = document.createElement("img");
+    img.id = "carouselImage";
+    img.className = "carousel-image";
+    img.alt = "";
+    carouselTrack.appendChild(img);
+    carouselDots.innerHTML = "";
+    galleryImages.forEach((_, i) => {
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = "carousel-dot" + (i === 0 ? " active" : "");
+      dot.setAttribute("aria-label", "Ir a gráfica " + (i + 1));
+      dot.addEventListener("click", function () {
+        showCarouselSlide(i);
+      });
+      carouselDots.appendChild(dot);
+    });
+    carouselIndex = 0;
+    showCarouselSlide(0);
+  }
+
+  if (carouselPrev) {
+    carouselPrev.addEventListener("click", function () {
+      showCarouselSlide(carouselIndex - 1);
+    });
+  }
+  if (carouselNext) {
+    carouselNext.addEventListener("click", function () {
+      showCarouselSlide(carouselIndex + 1);
+    });
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (!galleryImages.length || chartsCarousel.classList.contains("hidden")) return;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      showCarouselSlide(carouselIndex - 1);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      showCarouselSlide(carouselIndex + 1);
+    }
+  });
+
+  const btnCharts = document.getElementById("btnCharts");
+  if (btnCharts) {
+    btnCharts.addEventListener("click", function () {
+      const chartsRequestEl = document.getElementById("chartsRequest");
+      const request = chartsRequestEl ? (chartsRequestEl.value || "").trim() : "";
+      btnCharts.disabled = true;
+      fetch(API + "/charts/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request: request || null }),
+      })
+        .then((r) => {
+          if (!r.ok) return r.json().then((d) => Promise.reject(new Error(d.detail || r.statusText)));
+          return r.json();
+        })
+        .then((data) => {
+          if (data.images && data.images.length > 0) {
+            renderGallery(data.images);
+            if (chartsGallerySection) {
+              chartsGallerySection.classList.remove("hidden");
+              chartsGallerySection.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          }
+          alert(data.message || "Gráficas generadas. Revisa la carpeta images/.");
+        })
+        .catch((err) => alert("Error: " + (err.message || err)))
+        .finally(() => {
+          btnCharts.disabled = false;
+        });
+    });
+  }
 
   connectLogWebSocket();
   fetchRequests();
