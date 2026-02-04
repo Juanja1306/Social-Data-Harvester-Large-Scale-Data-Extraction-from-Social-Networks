@@ -23,7 +23,15 @@ from app import scraping
 
 app = FastAPI(title="Social Data Harvester API", version="1.0.0")
 
-# In-memory state for scraping (processes, queues, log)
+# Report file mapping (project root)
+LLM_REPORT_FILES = {
+    "Facebook": ("reporte_facebook_gemini.txt", "analisis_facebook_completo.json"),
+    "Instagram": ("reporte_instagram_openai.txt", "analisis_instagram_completo.json"),
+    "LinkedIn": ("reporte_linkedin_deepseek.txt", "analisis_linkedin_completo.json"),
+    "Twitter": ("reporte_twitter_grok.txt", "analisis_twitter_grok_completo.json"),
+}
+
+# In-memory state for scraping and LLM (processes, queues, log)
 scrape_state = {
     "running": False,
     "processes": [],
@@ -33,21 +41,32 @@ scrape_state = {
     "log_queue": None,
     "log_entries": [],
     "networks": [],
+    "llm_running": False,
+    "llm_processes": [],
+    "llm_log_queue": None,
 }
 
 
 def drain_log_queue():
-    """Drain log_queue into log_entries (call from main process only)."""
-    if scrape_state.get("log_queue") is None:
-        return
-    try:
-        while True:
-            msg = scrape_state["log_queue"].get_nowait()
-            scrape_state["log_entries"].append(
-                {"time": datetime.now().strftime("%H:%M:%S"), "message": msg}
-            )
-    except Exception:
-        pass
+    """Drain log_queue and llm_log_queue into log_entries (call from main process only)."""
+    for qkey in ("log_queue", "llm_log_queue"):
+        q = scrape_state.get(qkey)
+        if q is None:
+            continue
+        try:
+            while True:
+                msg = q.get_nowait()
+                scrape_state["log_entries"].append(
+                    {"time": datetime.now().strftime("%H:%M:%S"), "message": msg}
+                )
+        except Exception:
+            pass
+    # Update llm_running: check if any LLM process is still alive
+    procs = scrape_state.get("llm_processes") or []
+    alive = [p for p in procs if p.is_alive()]
+    scrape_state["llm_processes"] = alive
+    if not alive and scrape_state.get("llm_running"):
+        scrape_state["llm_running"] = False
 
 
 # --- Pydantic models ---
@@ -110,6 +129,7 @@ async def scrape_start(body: ScrapeStartBody):
                 stop_event,
                 i,
             ),
+            kwargs={"log_queue": log_queue},
         )
         p.start()
         scrape_state["processes"].append(p)
@@ -158,6 +178,7 @@ async def scrape_status():
         "running": scrape_state["running"],
         "networks": scrape_state["networks"],
         "log": scrape_state["log_entries"],
+        "llm_running": scrape_state["llm_running"],
     }
 
 
@@ -196,6 +217,9 @@ async def llm_analyze(body: LLMAnalyzeBody):
         )
     networks = body.networks or LLM_NETWORKS
     llm_queue = Queue()
+    llm_log_queue = Queue()
+    scrape_state["llm_log_queue"] = llm_log_queue
+    scrape_state["llm_running"] = True
     processes = []
     for network in networks:
         if network not in LLM_NETWORKS:
@@ -203,15 +227,62 @@ async def llm_analyze(body: LLMAnalyzeBody):
         p = Process(
             target=scraping.run_llm_process,
             args=(network, llm_queue),
-            kwargs={"csv_file": csv_path},
+            kwargs={"csv_file": csv_path, "log_queue": llm_log_queue},
         )
         p.start()
-        processes.append((network, p))
+        processes.append(p)
+    scrape_state["llm_processes"] = processes
+    scrape_state["log_entries"].append(
+        {
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "message": f"Análisis LLM iniciado: {', '.join(networks)}",
+        }
+    )
     return {
         "status": "started",
-        "message": "Análisis LLM en segundo plano. Los reportes se guardan en la raíz del proyecto.",
-        "networks": [n for n, _ in processes],
+        "message": "Análisis LLM en segundo plano. Los reportes se muestran abajo cuando terminen.",
+        "networks": [n for n in networks if n in LLM_NETWORKS],
     }
+
+
+@app.get("/api/llm/reports")
+async def list_llm_reports():
+    """List available LLM report files (text + json) per network."""
+    root = os.getcwd()
+    reports = []
+    for network, (txt_name, json_name) in LLM_REPORT_FILES.items():
+        txt_path = os.path.join(root, txt_name)
+        json_path = os.path.join(root, json_name)
+        reports.append({
+            "network": network,
+            "report_file": txt_name,
+            "has_text": os.path.isfile(txt_path),
+            "has_json": os.path.isfile(json_path),
+        })
+    return {"reports": reports}
+
+
+@app.get("/api/llm/reports/{network}")
+async def get_llm_report(network: str, format: str = "text"):
+    """Return report content: format=text (reporte *.txt) or format=json (analisis *_completo.json)."""
+    if network not in LLM_REPORT_FILES:
+        raise HTTPException(status_code=404, detail="Unknown network")
+    txt_name, json_name = LLM_REPORT_FILES[network]
+    root = os.getcwd()
+    if format == "json":
+        path = os.path.join(root, json_name)
+        if not os.path.isfile(path):
+            raise HTTPException(status_code=404, detail="Report file not found")
+        import json as json_mod
+        with open(path, "r", encoding="utf-8") as f:
+            data = json_mod.load(f)
+        return JSONResponse(content=data)
+    path = os.path.join(root, txt_name)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Report file not found")
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return JSONResponse(content={"network": network, "content": content})
 
 
 # Mount static frontend last so /api/* is matched first

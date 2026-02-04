@@ -1,6 +1,7 @@
 (function () {
   const API = "/api";
   let pollInterval = null;
+  let reportPollInterval = null;
 
   const queryEl = document.getElementById("query");
   const maxPostsEl = document.getElementById("max_posts");
@@ -10,6 +11,12 @@
   const statusBar = document.getElementById("statusBar");
   const linkDownload = document.getElementById("linkDownload");
   const btnLLM = document.getElementById("btnLLM");
+  const reportsSection = document.getElementById("reportsSection");
+  const reportsHint = document.getElementById("reportsHint");
+  const llmRunning = document.getElementById("llmRunning");
+  const reportsTabs = document.getElementById("reportsTabs");
+  const reportContent = document.getElementById("reportContent");
+  const reportText = document.getElementById("reportText");
 
   function getSelectedNetworks() {
     const checkboxes = document.querySelectorAll('input[name="network"]:checked');
@@ -41,25 +48,31 @@
 
   function updateUIFromStatus(data) {
     const running = data.running === true;
+    const llmRunningState = data.llm_running === true;
     btnStart.disabled = running;
     btnStop.disabled = !running;
     setStatus(running ? "Estado: Scraping activo..." : "Estado: Inactivo", running);
     if (data.log && data.log.length > 0) {
       renderLog(data.log);
     }
+    if (llmRunningState) {
+      llmRunning.classList.remove("hidden");
+      startReportPolling();
+    } else {
+      llmRunning.classList.add("hidden");
+      stopReportPolling();
+    }
+    if (running) {
+      startPolling();
+    } else {
+      stopPolling();
+    }
   }
 
   function fetchStatus() {
     fetch(API + "/scrape/status")
       .then((r) => r.json())
-      .then((data) => {
-        updateUIFromStatus(data);
-        if (data.running) {
-          startPolling();
-        } else {
-          stopPolling();
-        }
-      })
+      .then((data) => updateUIFromStatus(data))
       .catch((err) => {
         console.error(err);
         setStatus("Error al obtener estado", false);
@@ -68,13 +81,89 @@
 
   function startPolling() {
     if (pollInterval) return;
-    pollInterval = setInterval(fetchStatus, 1500);
+    pollInterval = setInterval(fetchStatus, 1200);
   }
 
   function stopPolling() {
     if (pollInterval) {
       clearInterval(pollInterval);
       pollInterval = null;
+    }
+  }
+
+  function loadReport(network, format) {
+    const fmt = format || "text";
+    fetch(API + "/llm/reports/" + encodeURIComponent(network) + "?format=" + fmt)
+      .then((r) => {
+        if (!r.ok) throw new Error("Report not found");
+        return r.json();
+      })
+      .then((data) => {
+        if (fmt === "json") {
+          reportText.textContent = JSON.stringify(data, null, 2);
+        } else {
+          reportText.textContent = data.content || "";
+        }
+        reportContent.classList.remove("hidden");
+      })
+      .catch(() => {
+        reportText.textContent = "No hay contenido para este reporte.";
+        reportContent.classList.remove("hidden");
+      });
+  }
+
+  function renderReportsList(list) {
+    if (!list || !list.length) return;
+    reportsHint.classList.add("hidden");
+    reportsTabs.classList.remove("hidden");
+    reportsTabs.innerHTML = "";
+    list.forEach((r) => {
+      if (!r.has_text && !r.has_json) return;
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = "report-tab";
+      tab.textContent = r.network;
+      tab.dataset.network = r.network;
+      tab.addEventListener("click", function () {
+        reportsTabs.querySelectorAll(".report-tab").forEach((t) => t.classList.remove("active"));
+        tab.classList.add("active");
+        loadReport(r.network, "text");
+      });
+      reportsTabs.appendChild(tab);
+    });
+    const first = list.find((r) => r.has_text || r.has_json);
+    if (first) {
+      reportsTabs.querySelector(`[data-network="${first.network}"]`)?.classList.add("active");
+      loadReport(first.network, "text");
+    }
+  }
+
+  function fetchReportsList() {
+    fetch(API + "/llm/reports")
+      .then((r) => r.json())
+      .then((data) => {
+        const list = data.reports || [];
+        const available = list.filter((r) => r.has_text || r.has_json);
+        if (available.length > 0) {
+          renderReportsList(list);
+          stopReportPolling();
+        }
+      })
+      .catch(() => {});
+  }
+
+  function startReportPolling() {
+    if (reportPollInterval) return;
+    reportPollInterval = setInterval(() => {
+      fetchStatus();
+      fetchReportsList();
+    }, 1500);
+  }
+
+  function stopReportPolling() {
+    if (reportPollInterval) {
+      clearInterval(reportPollInterval);
+      reportPollInterval = null;
     }
   }
 
@@ -133,20 +222,29 @@
     fetch(API + "/llm/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ networks: getSelectedNetworks().filter((n) => ["LinkedIn", "Instagram", "Twitter", "Facebook"].includes(n)) }),
+      body: JSON.stringify({
+        networks: getSelectedNetworks().filter((n) =>
+          ["LinkedIn", "Instagram", "Twitter", "Facebook"].includes(n)
+        ),
+      }),
     })
       .then((r) => {
         if (!r.ok) return r.json().then((d) => Promise.reject(new Error(d.detail || r.statusText)));
         return r.json();
       })
       .then((data) => {
-        alert(data.message || "Análisis LLM iniciado.");
+        reportsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        llmRunning.classList.remove("hidden");
+        startReportPolling();
+        fetchStatus();
       })
       .catch((err) => alert("Error: " + (err.message || err)))
-      .finally(() => { btnLLM.disabled = false; });
+      .finally(() => {
+        btnLLM.disabled = false;
+      });
   });
 
-  // Initial load: clear log, fetch status once (no polling until we know running)
   logArea.innerHTML = "";
   fetchStatus();
+  fetchReportsList();
 })();

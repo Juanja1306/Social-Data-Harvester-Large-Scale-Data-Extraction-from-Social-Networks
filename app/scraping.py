@@ -6,9 +6,42 @@ import csv
 import os
 import queue
 import re
+import sys
 from multiprocessing import Process, Queue, Event
 from datetime import datetime
 from playwright.sync_api import sync_playwright
+
+
+class StreamToQueue:
+    """Wraps stdout so print() from child processes goes to log_queue (same as terminal)."""
+    def __init__(self, log_queue, prefix=""):
+        self.log_queue = log_queue
+        self.prefix = prefix
+        self.buffer = ""
+
+    def write(self, text):
+        if not text:
+            return
+        self.buffer += text
+        while "\n" in self.buffer or "\r" in self.buffer:
+            if "\n" in self.buffer:
+                line, self.buffer = self.buffer.split("\n", 1)
+            else:
+                line, self.buffer = self.buffer.split("\r", 1)
+            line = line.strip().replace("\r", "")
+            if line:
+                try:
+                    self.log_queue.put(self.prefix + line, block=False)
+                except queue.Full:
+                    pass
+
+    def flush(self):
+        if self.buffer.strip():
+            try:
+                self.log_queue.put(self.prefix + self.buffer.strip(), block=False)
+            except queue.Full:
+                pass
+            self.buffer = ""
 
 
 def clean_text(text):
@@ -77,45 +110,56 @@ def csv_writer_process(result_queue, stop_event, filename="resultados.csv", log_
                 continue
 
 
-def run_scraper(network, query, max_posts, result_queue, stop_event, process_id):
+def run_scraper(network, query, max_posts, result_queue, stop_event, process_id, log_queue=None):
     """Ejecutar scraper en proceso separado (Chromium headless=False, mismo login/cookies que main.py)."""
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        )
-        page = context.new_page()
+    old_stdout = sys.stdout
+    if log_queue is not None:
+        sys.stdout = StreamToQueue(log_queue, prefix=f"[{network}] ")
 
-        try:
-            if network == "LinkedIn":
-                from process.Process_Linkedin import LinkedinScraper
-                scraper = LinkedinScraper(query, result_queue, stop_event, max_posts)
-                scraper.run(page)
-            elif network == "Twitter":
-                from process.Process_Twitter import TwitterScraper
-                scraper = TwitterScraper(query, result_queue, stop_event, max_posts)
-                scraper.run(page)
-            elif network == "Reddit":
-                from process.Process_Reddit import RedditScraper
-                scraper = RedditScraper(query, result_queue, stop_event, max_posts)
-                scraper.run(page)
-            elif network == "Instagram":
-                from process.Process_Instagram import InstagramScraper
-                scraper = InstagramScraper(query, result_queue, stop_event, max_posts)
-                scraper.run(page)
-            elif network == "Facebook":
-                from process.Process_Facebook import FacebookScraper
-                scraper = FacebookScraper(query, result_queue, stop_event, max_posts)
-                scraper.run(page)
-        except Exception as e:
-            print(f"Error crítico en proceso {network}: {e}")
-        finally:
-            browser.close()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=False)
+            context = browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
+            page = context.new_page()
+
+            try:
+                if network == "LinkedIn":
+                    from process.Process_Linkedin import LinkedinScraper
+                    scraper = LinkedinScraper(query, result_queue, stop_event, max_posts)
+                    scraper.run(page)
+                elif network == "Twitter":
+                    from process.Process_Twitter import TwitterScraper
+                    scraper = TwitterScraper(query, result_queue, stop_event, max_posts)
+                    scraper.run(page)
+                elif network == "Reddit":
+                    from process.Process_Reddit import RedditScraper
+                    scraper = RedditScraper(query, result_queue, stop_event, max_posts)
+                    scraper.run(page)
+                elif network == "Instagram":
+                    from process.Process_Instagram import InstagramScraper
+                    scraper = InstagramScraper(query, result_queue, stop_event, max_posts)
+                    scraper.run(page)
+                elif network == "Facebook":
+                    from process.Process_Facebook import FacebookScraper
+                    scraper = FacebookScraper(query, result_queue, stop_event, max_posts)
+                    scraper.run(page)
+            except Exception as e:
+                print(f"Error crítico en proceso {network}: {e}")
+            finally:
+                browser.close()
+    finally:
+        sys.stdout = old_stdout
 
 
-def run_llm_process(network, result_queue, csv_file="resultados.csv"):
+def run_llm_process(network, result_queue, csv_file="resultados.csv", log_queue=None):
     """Proceso paralelo para ejecutar el LLM de una red social."""
+    old_stdout = sys.stdout
+    if log_queue is not None:
+        sys.stdout = StreamToQueue(log_queue, prefix=f"[LLM-{network}] ")
+
     try:
         if network == "Facebook":
             from LLM.sentiment_analyzer_facebook import start_facebook_analysis
@@ -137,3 +181,5 @@ def run_llm_process(network, result_queue, csv_file="resultados.csv"):
             pass
     except Exception as e:
         result_queue.put((network, f"Error crítico en LLM {network}: {e}"))
+    finally:
+        sys.stdout = old_stdout
