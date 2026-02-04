@@ -288,7 +288,7 @@ def run_llm_process(
     report_filename=None,
     analisis_filename=None,
 ):
-    """Proceso paralelo para ejecutar el LLM. Si hay DB paths, no genera .txt/.json y guarda solo en SQLite."""
+    """Proceso paralelo: todas las redes usan solo DeepSeek. Si hay DB paths, guarda solo en SQLite."""
     old_stdout = sys.stdout
     if log_queue is not None:
         sys.stdout = StreamToQueue(log_queue, prefix=f"[LLM-{network}] ")
@@ -297,20 +297,8 @@ def run_llm_process(
     ret = None
 
     try:
-        if network == "Facebook":
-            from LLM.sentiment_analyzer_facebook import start_facebook_analysis
-            ret = start_facebook_analysis(csv_file, save_to_file=not use_db)
-        elif network == "Instagram":
-            from LLM.sentiment_analyzer_instagram import start_instagram_analysis
-            ret = start_instagram_analysis(csv_file, save_to_file=not use_db)
-        elif network == "LinkedIn":
-            from LLM.sentiment_analyzer_linkedin import start_linkedin_analysis
-            ret = start_linkedin_analysis(csv_file, save_to_file=not use_db)
-        elif network == "Twitter":
-            from LLM.sentiment_analyzer_twitter_grok import start_twitter_grok_analysis
-            ret = start_twitter_grok_analysis(csv_file, save_to_file=not use_db)
-        elif network == "Reddit":
-            pass
+        from LLM.sentiment_analyzer_deepseek import start_deepseek_analysis
+        ret = start_deepseek_analysis(csv_file, network, save_to_file=not use_db)
         if ret is not None:
             if use_db and isinstance(ret, tuple) and len(ret) == 2:
                 reporte_str, resultados_list = ret
