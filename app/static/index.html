@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Social Data Harvester</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="page-bg"></div>
+  <div class="container">
+    <header class="header animate-in">
+      <h1>Multi-Red Social Scraper</h1>
+      <p class="subtitle">Búsqueda y análisis desde la web</p>
+    </header>
+
+    <section class="config card animate-in" style="--i: 1">
+      <h2>Configuración de búsqueda</h2>
+      <div class="form-row">
+        <label for="query">Request (tema de búsqueda):</label>
+        <input type="text" id="query" list="requestList" value="Educacion en Estados Unidos" placeholder="Selecciona uno existente o escribe uno nuevo">
+        <datalist id="requestList"></datalist>
+      </div>
+      <div class="form-row">
+        <label for="max_posts">Máximo de posts:</label>
+        <input type="number" id="max_posts" value="50" min="1" max="500">
+        <span class="hint">(por red social)</span>
+      </div>
+      <div class="form-row networks">
+        <span class="label">Redes:</span>
+        <label><input type="checkbox" name="network" value="LinkedIn" checked> LinkedIn</label>
+        <label><input type="checkbox" name="network" value="Instagram" checked> Instagram</label>
+        <label><input type="checkbox" name="network" value="Facebook" checked> Facebook</label>
+        <label><input type="checkbox" name="network" value="Twitter" checked> Twitter</label>
+      </div>
+      <div class="actions">
+        <button type="button" id="btnStart" class="btn btn-primary">Iniciar búsqueda</button>
+        <button type="button" id="btnStop" class="btn btn-danger" disabled>Parar búsqueda</button>
+      </div>
+    </section>
+
+    <section class="log card animate-in" style="--i: 2">
+      <h2>Log de actividad</h2>
+      <div class="log-options">
+        <label><input type="checkbox" id="autoScroll" name="autoScroll"> autoScroll</label>
+      </div>
+      <div id="logArea" class="log-area"></div>
+      <div class="status-bar" id="statusBar">Estado: Inactivo</div>
+    </section>
+
+    <section class="tools card animate-in" style="--i: 3">
+      <h2>Resultados y análisis</h2>
+      <div class="form-row">
+        <label for="downloadRequest">Descargar por Request:</label>
+        <select id="downloadRequest">
+          <option value="">-- Todos --</option>
+        </select>
+        <a href="/api/results" id="linkDownload" class="btn btn-secondary" download>Descargar CSV</a>
+      </div>
+      <div class="form-row llm-row">
+        <label for="llmRequest">Analizar Request (obligatorio):</label>
+        <select id="llmRequest" required>
+          <option value="">-- Selecciona un Request --</option>
+        </select>
+        <button type="button" id="btnLLM" class="btn btn-accent">Ejecutar análisis LLM (sentimientos)</button>
+      </div>
+    </section>
+
+    <section class="reports card animate-in" id="reportsSection" style="--i: 4">
+      <h2>Reportes de análisis LLM</h2>
+      <p class="reports-hint" id="reportsHint">Ejecuta el análisis LLM para ver los reportes aquí.</p>
+      <div id="llmRunning" class="llm-running hidden">
+        <span class="spinner"></span>
+        <span>Análisis LLM en curso...</span>
+      </div>
+      <div id="reportsTabs" class="reports-tabs hidden"></div>
+      <h3 id="reportTitle" class="report-title hidden"></h3>
+      <div id="reportContent" class="report-content hidden">
+        <pre id="reportText"></pre>
+      </div>
+    </section>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
