@@ -4,6 +4,7 @@ Reuses the same process-based scraping as main.py (Playwright headless=False, co
 Stores results in SQLite; same columns as former CSV.
 """
 import csv
+import json
 import os
 import queue
 import re
@@ -147,36 +148,28 @@ def ensure_analisis_table(db_path):
     conn.close()
 
 
-def _save_llm_outputs_to_db(network, request_value, reportes_db_path, analisis_db_path, report_filename, analisis_filename):
-    """Read reporte .txt and analisis .json from cwd and save to SQLite."""
-    root = os.getcwd()
-    report_path = os.path.join(root, report_filename)
-    analisis_path = os.path.join(root, analisis_filename)
+def _save_report_and_analisis_to_db(network, request_value, reportes_db_path, analisis_db_path, reporte_str, resultados_list):
+    """Save reporte text and analisis JSON (from memory) to SQLite. No files generated."""
     created = datetime.now().isoformat()
-    if os.path.isfile(report_path):
-        with open(report_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        ensure_reportes_table(reportes_db_path)
-        conn = sqlite3.connect(reportes_db_path)
-        _ensure_reportes_table(conn)
-        conn.execute(
-            "INSERT INTO reportes (network, request, content, created_at) VALUES (?, ?, ?, ?)",
-            (network, request_value, content, created),
-        )
-        conn.commit()
-        conn.close()
-    if os.path.isfile(analisis_path):
-        with open(analisis_path, "r", encoding="utf-8") as f:
-            content_json = f.read()
-        ensure_analisis_table(analisis_db_path)
-        conn = sqlite3.connect(analisis_db_path)
-        _ensure_analisis_table(conn)
-        conn.execute(
-            "INSERT INTO analisis (network, request, content_json, created_at) VALUES (?, ?, ?, ?)",
-            (network, request_value, content_json, created),
-        )
-        conn.commit()
-        conn.close()
+    ensure_reportes_table(reportes_db_path)
+    conn = sqlite3.connect(reportes_db_path)
+    _ensure_reportes_table(conn)
+    conn.execute(
+        "INSERT INTO reportes (network, request, content, created_at) VALUES (?, ?, ?, ?)",
+        (network, request_value, reporte_str, created),
+    )
+    conn.commit()
+    conn.close()
+    ensure_analisis_table(analisis_db_path)
+    content_json = json.dumps(resultados_list, ensure_ascii=False, indent=2)
+    conn = sqlite3.connect(analisis_db_path)
+    _ensure_analisis_table(conn)
+    conn.execute(
+        "INSERT INTO analisis (network, request, content_json, created_at) VALUES (?, ?, ?, ?)",
+        (network, request_value, content_json, created),
+    )
+    conn.commit()
+    conn.close()
 
 
 def sqlite_writer_process(result_queue, stop_event, db_path, log_queue=None):
@@ -295,45 +288,43 @@ def run_llm_process(
     report_filename=None,
     analisis_filename=None,
 ):
-    """Proceso paralelo para ejecutar el LLM de una red social. Guarda reporte .txt y analisis .json en SQLite."""
+    """Proceso paralelo para ejecutar el LLM. Si hay DB paths, no genera .txt/.json y guarda solo en SQLite."""
     old_stdout = sys.stdout
     if log_queue is not None:
         sys.stdout = StreamToQueue(log_queue, prefix=f"[LLM-{network}] ")
 
+    use_db = bool(request_value and reportes_db_path and analisis_db_path)
+    ret = None
+
     try:
         if network == "Facebook":
             from LLM.sentiment_analyzer_facebook import start_facebook_analysis
-            reporte = start_facebook_analysis(csv_file)
-            result_queue.put((network, reporte))
-        if network == "Instagram":
+            ret = start_facebook_analysis(csv_file, save_to_file=not use_db)
+        elif network == "Instagram":
             from LLM.sentiment_analyzer_instagram import start_instagram_analysis
-            reporte = start_instagram_analysis(csv_file)
-            result_queue.put((network, reporte))
+            ret = start_instagram_analysis(csv_file, save_to_file=not use_db)
         elif network == "LinkedIn":
             from LLM.sentiment_analyzer_linkedin import start_linkedin_analysis
-            reporte = start_linkedin_analysis(csv_file)
-            result_queue.put((network, reporte))
+            ret = start_linkedin_analysis(csv_file, save_to_file=not use_db)
         elif network == "Twitter":
             from LLM.sentiment_analyzer_twitter_grok import start_twitter_grok_analysis
-            reporte = start_twitter_grok_analysis(csv_file)
-            result_queue.put((network, reporte))
+            ret = start_twitter_grok_analysis(csv_file, save_to_file=not use_db)
         elif network == "Reddit":
             pass
-        if (
-            request_value
-            and reportes_db_path
-            and analisis_db_path
-            and report_filename
-            and analisis_filename
-        ):
-            _save_llm_outputs_to_db(
-                network,
-                request_value,
-                reportes_db_path,
-                analisis_db_path,
-                report_filename,
-                analisis_filename,
-            )
+        if ret is not None:
+            if use_db and isinstance(ret, tuple) and len(ret) == 2:
+                reporte_str, resultados_list = ret
+                _save_report_and_analisis_to_db(
+                    network,
+                    request_value,
+                    reportes_db_path,
+                    analisis_db_path,
+                    reporte_str,
+                    resultados_list,
+                )
+                result_queue.put((network, reporte_str))
+            else:
+                result_queue.put((network, ret if isinstance(ret, str) else ret[0]))
     except Exception as e:
         result_queue.put((network, f"Error crítico en LLM {network}: {e}"))
     finally:

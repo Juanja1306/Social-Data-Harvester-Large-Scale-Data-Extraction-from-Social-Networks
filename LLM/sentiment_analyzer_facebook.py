@@ -249,7 +249,7 @@ def generar_reporte(resultados: List[Dict]) -> str:
         """
     return reporte
 
-def start_facebook_analysis(csv_file: str = "resultados.csv") -> str:
+def start_facebook_analysis(csv_file: str = "resultados.csv", save_to_file: bool = True):
     global tiempos_procesamiento, tiempos_api
     tiempos_procesamiento, tiempos_api = [], []
     
@@ -261,20 +261,22 @@ def start_facebook_analysis(csv_file: str = "resultados.csv") -> str:
         resultados = procesar_facebook_secuencial(csv_file)
         
         if not resultados:
-            return "No se pudo completar el análisis."
-            
-        with open(ARCHIVO_RESULTADOS_JSON, 'w', encoding='utf-8') as f:
-            json.dump(resultados, f, ensure_ascii=False, indent=2)
+            return ("No se pudo completar el análisis.", []) if not save_to_file else "No se pudo completar el análisis."
+        
+        if save_to_file:
+            with open(ARCHIVO_RESULTADOS_JSON, 'w', encoding='utf-8') as f:
+                json.dump(resultados, f, ensure_ascii=False, indent=2)
             
         reporte = generar_reporte(resultados)
         
-        with open(ARCHIVO_REPORTE, 'w', encoding='utf-8') as f:
-            f.write(reporte)
+        if save_to_file:
+            with open(ARCHIVO_REPORTE, 'w', encoding='utf-8') as f:
+                f.write(reporte)
             
-        return reporte
+        return (reporte, resultados) if not save_to_file else reporte
 
     except Exception as e:
-        return f"Error crítico: {str(e)}"
+        return (f"Error crítico: {str(e)}", []) if not save_to_file else f"Error crítico: {str(e)}"
 
 if __name__ == "__main__":
     print(start_facebook_analysis())

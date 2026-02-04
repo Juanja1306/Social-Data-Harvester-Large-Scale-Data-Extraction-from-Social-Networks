@@ -430,12 +430,12 @@ Total de Llamadas API: {len(tiempos_api)}
     return reporte
 
 
-def start_twitter_grok_analysis(csv_file: str = "resultados.csv") -> str:
+def start_twitter_grok_analysis(csv_file: str = "resultados.csv", save_to_file: bool = True):
     """
     Punto de entrada para main.py:
     - Filtra Twitter en el CSV general.
     - Lanza el procesamiento concurrente con Grok.
-    - Guarda JSON y TXT, y devuelve el texto del reporte.
+    - Si save_to_file: guarda JSON y TXT. Si no, devuelve (reporte, resultados) para guardar solo en BD.
     """
     global tiempos_procesamiento, tiempos_api, tiempo_total_wallclock
     tiempos_procesamiento = []
@@ -449,30 +449,32 @@ def start_twitter_grok_analysis(csv_file: str = "resultados.csv") -> str:
     try:
         resultados = asyncio.run(procesar_twitter_concurrente(csv_file))
         if not resultados:
-            return "No se procesaron publicaciones de Twitter. Verifica que existan datos en el CSV."
+            return ("No se procesaron publicaciones de Twitter. Verifica que existan datos en el CSV.", []) if not save_to_file else "No se procesaron publicaciones de Twitter. Verifica que existan datos en el CSV."
 
-        # Guardar JSON con todos los detalles
-        try:
-            with open(ARCHIVO_RESULTADOS_JSON, "w", encoding="utf-8") as f:
-                json.dump(resultados, f, ensure_ascii=False, indent=2)
-            print(f"[Twitter-Grok] Resultados guardados en {ARCHIVO_RESULTADOS_JSON}")
-        except Exception as e:
-            print(f"[Twitter-Grok] Error guardando JSON: {e}")
+        # Guardar JSON (solo si save_to_file)
+        if save_to_file:
+            try:
+                with open(ARCHIVO_RESULTADOS_JSON, "w", encoding="utf-8") as f:
+                    json.dump(resultados, f, ensure_ascii=False, indent=2)
+                print(f"[Twitter-Grok] Resultados guardados en {ARCHIVO_RESULTADOS_JSON}")
+            except Exception as e:
+                print(f"[Twitter-Grok] Error guardando JSON: {e}")
 
         reporte = generar_reporte(resultados)
 
-        try:
-            with open(ARCHIVO_REPORTE, "w", encoding="utf-8") as f:
-                f.write(reporte)
-            print(f"[Twitter-Grok] Reporte guardado en {ARCHIVO_REPORTE}")
-        except Exception as e:
-            print(f"[Twitter-Grok] Error guardando reporte: {e}")
+        if save_to_file:
+            try:
+                with open(ARCHIVO_REPORTE, "w", encoding="utf-8") as f:
+                    f.write(reporte)
+                print(f"[Twitter-Grok] Reporte guardado en {ARCHIVO_REPORTE}")
+            except Exception as e:
+                print(f"[Twitter-Grok] Error guardando reporte: {e}")
 
         print("\n" + "=" * 70)
         print("ANÁLISIS TWITTER/X (Grok) COMPLETADO")
         print("=" * 70 + "\n")
 
-        return reporte
+        return (reporte, resultados) if not save_to_file else reporte
 
     except Exception as e:
         error_msg = f"Error crítico en análisis de Twitter (Grok): {str(e)}"

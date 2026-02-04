@@ -433,7 +433,7 @@ def generar_reporte(resultados: List[Dict]) -> str:
     return reporte
 
 
-def start_instagram_analysis(csv_file: str = "resultados.csv") -> str:
+def start_instagram_analysis(csv_file: str = "resultados.csv", save_to_file: bool = True):
     """
     Función principal para iniciar el análisis de sentimientos de Instagram.
     """
@@ -453,32 +453,34 @@ def start_instagram_analysis(csv_file: str = "resultados.csv") -> str:
         resultados = asyncio.run(procesar_instagram_concurrente(csv_file))
         
         if not resultados:
-            return "No se procesaron publicaciones. Verifica que existan datos de Instagram en el CSV."
+            return ("No se procesaron publicaciones. Verifica que existan datos de Instagram en el CSV.", []) if not save_to_file else "No se procesaron publicaciones. Verifica que existan datos de Instagram en el CSV."
         
-        # Guardar resultados en JSON
-        try:
-            with open(ARCHIVO_RESULTADOS_JSON, 'w', encoding='utf-8') as f:
-                json.dump(resultados, f, ensure_ascii=False, indent=2)
-            print(f"[Instagram] Resultados guardados en {ARCHIVO_RESULTADOS_JSON}")
-        except Exception as e:
-            print(f"[Instagram] Error guardando JSON: {e}")
+        # Guardar resultados en JSON (solo si save_to_file)
+        if save_to_file:
+            try:
+                with open(ARCHIVO_RESULTADOS_JSON, 'w', encoding='utf-8') as f:
+                    json.dump(resultados, f, ensure_ascii=False, indent=2)
+                print(f"[Instagram] Resultados guardados en {ARCHIVO_RESULTADOS_JSON}")
+            except Exception as e:
+                print(f"[Instagram] Error guardando JSON: {e}")
         
         # Generar reporte
         reporte = generar_reporte(resultados)
         
-        # Guardar reporte en archivo
-        try:
-            with open(ARCHIVO_REPORTE, 'w', encoding='utf-8') as f:
-                f.write(reporte)
-            print(f"[Instagram] Reporte guardado en {ARCHIVO_REPORTE}")
-        except Exception as e:
-            print(f"[Instagram] Error guardando reporte: {e}")
+        # Guardar reporte en archivo (solo si save_to_file)
+        if save_to_file:
+            try:
+                with open(ARCHIVO_REPORTE, 'w', encoding='utf-8') as f:
+                    f.write(reporte)
+                print(f"[Instagram] Reporte guardado en {ARCHIVO_REPORTE}")
+            except Exception as e:
+                print(f"[Instagram] Error guardando reporte: {e}")
         
         print("\n" + "="*70)
         print("ANÁLISIS COMPLETADO")
         print("="*70 + "\n")
         
-        return reporte
+        return (reporte, resultados) if not save_to_file else reporte
         
     except Exception as e:
         error_msg = f"Error crítico en análisis de Instagram: {str(e)}"
