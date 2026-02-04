@@ -1,529 +1,440 @@
 # 🌐 Social Data Harvester: Large-Scale Data Extraction from Social Networks
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Playwright](https://img.shields.io/badge/Playwright-1.57.0-green.svg)](https://playwright.dev/)
+[![Playwright](https://img.shields.io/badge/Playwright-1.57-green.svg)](https://playwright.dev/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.128-teal.svg)](https://fastapi.tiangolo.com/)
 
-> **Academic Research Tool**: Automated multi-platform social media scraper with parallel processing and NLP analysis capabilities.
-
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Supported Platforms](#supported-platforms)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Project Structure](#project-structure)
-- [Data Pipeline](#data-pipeline)
-- [NLP Analysis](#nlp-analysis)
-- [Technical Details](#technical-details)
-- [Configuration](#configuration)
-- [Troubleshooting](#troubleshooting)
-- [Legal & Ethical Considerations](#legal--ethical-considerations)
+> **Herramienta de investigación**: Scraper multi-plataforma con interfaz web, almacenamiento SQLite y análisis de sentimientos con LLM (DeepSeek).
 
 ---
 
-## 🎯 Overview
+## 📑 Índice
 
-**Social Data Harvester** is a high-performance, multi-threaded web scraping framework designed for academic research and data analysis. It enables large-scale extraction of publicly available content from multiple social media platforms simultaneously, with built-in NLP (Natural Language Processing) capabilities for text mining and topic modeling.
-
-### Key Capabilities
-
-- **Multi-Platform Scraping**: Simultaneous data extraction from Reddit, LinkedIn, Instagram, and Facebook
-- **Parallel Processing**: Leverages Python's `multiprocessing` for concurrent scraping across platforms
-- **Intelligent Session Management**: Cookie-based authentication with manual login fallback
-- **Anti-Detection Mechanisms**: Human-like behavior simulation, random delays, and stealth techniques
-- **Real-time Monitoring**: Tkinter-based GUI for live progress tracking
-- **Automated NLP Pipeline**: Text mining, TF-IDF analysis, topic modeling (LDA), and visualization
-
----
-
-## ✨ Features
-
-### 🚀 Core Features
-
-- **Parallel Multi-Platform Scraping**
-  - Independent processes for each social network
-  - Configurable post limits per platform
-  - Real-time progress monitoring via GUI
-  - Graceful shutdown and error recovery
-
-- **Smart Authentication**
-  - Cookie persistence across sessions
-  - Automatic cookie loading/saving
-  - Manual login detection and waiting
-  - Session state management
-
-- **Anti-Bot Protection**
-  - Random sleep intervals (human-like behavior)
-  - Stealth JavaScript injection
-  - User-agent rotation
-  - CAPTCHA detection and pause
-
-- **Robust Data Handling**
-  - UTF-8 encoding with emoji removal
-  - Duplicate detection via hashing
-  - Atomic CSV writing (no race conditions)
-  - Structured data format with metadata
-
-### 📊 NLP & Analysis Features
-
-- **Text Preprocessing**
-  - Multilingual stopword removal (Spanish + English)
-  - Hybrid stemming (SnowballStemmer)
-  - URL and emoji cleaning
-  - Tokenization and normalization
-
-- **Analysis Techniques**
-  - **TF-IDF**: Term frequency-inverse document frequency analysis
-  - **LDA**: Latent Dirichlet Allocation for topic modeling
-  - **N-grams**: Bigram extraction and frequency analysis
-  - **Word Cloud**: Visual representation of term frequencies
-
-- **Output Artifacts**
-  - Top TF-IDF terms (text file)
-  - LDA topics (text file)
-  - Word cloud visualization (PNG)
-  - Top terms bar chart (PNG)
-  - Top bigrams bar chart (PNG)
+- [Visión general](#-visión-general)
+- [Características](#-características)
+- [Arquitectura](#-arquitectura)
+- [Plataformas soportadas](#-plataformas-soportadas)
+- [Instalación](#-instalación)
+- [Configuración](#-configuración)
+- [Uso](#-uso)
+- [Estructura del proyecto](#-estructura-del-proyecto)
+- [Bases de datos y pipeline de datos](#-bases-de-datos-y-pipeline-de-datos)
+- [API REST](#-api-rest)
+- [Interfaz web](#-interfaz-web)
+- [Análisis LLM (DeepSeek)](#-análisis-llm-deepseek)
+- [Gráficas](#-gráficas)
+- [Comentarios y explicaciones](#-comentarios-y-explicaciones)
+- [Detalles técnicos](#-detalles-técnicos)
+- [Solución de problemas](#-solución-de-problemas)
+- [Aspectos legales y éticos](#-aspectos-legales-y-éticos)
+- [Referencias](#-referencias)
 
 ---
 
-## 🏗️ Architecture
+## 🎯 Visión general
 
-```mermaid
-graph TB
-    A[Main GUI - Tkinter] --> B[Multiprocessing Manager]
-    B --> C[CSV Writer Process]
-    B --> D[Reddit Scraper Process]
-    B --> E[LinkedIn Scraper Process]
-    B --> F[Instagram Scraper Process]
-    B --> G[Facebook Scraper Process]
-    
-    D --> H[Playwright Browser]
-    E --> H
-    F --> H
-    G --> H
-    
-    D --> I[Result Queue]
-    E --> I
-    F --> I
-    G --> I
-    
-    I --> C
-    C --> J[resultados.csv]
-    
-    J --> K[NLP Analysis Pipeline]
-    K --> L[Text Preprocessing]
-    L --> M[TF-IDF Analysis]
-    L --> N[LDA Topic Modeling]
-    L --> O[N-gram Extraction]
-    
-    M --> P[nlp_outputs/]
-    N --> P
-    O --> P
+**Social Data Harvester** es una aplicación web que permite extraer contenido público de varias redes sociales en paralelo, guardar los resultados en SQLite y analizar sentimientos (positivo/negativo/neutral) por post y por comentario usando el modelo DeepSeek. Incluye reportes por red, gráficas y una sección para ver cada comentario con su explicación de sentimiento.
+
+### Capacidades principales
+
+- **Scraping multi-plataforma**: LinkedIn, Instagram, Facebook y Twitter en paralelo.
+- **Búsqueda por frase exacta**: Las consultas se envían entre comillas dobles para coincidencia exacta en cada red.
+- **Interfaz web**: FastAPI + frontend estático (HTML/CSS/JS) con log en tiempo real por WebSocket.
+- **Almacenamiento SQLite**: `resultados.db` (datos crudos), `reportes.db` (reportes texto) y `analisis.db` (JSON por publicación).
+- **Análisis de sentimientos**: DeepSeek analiza cada post y cada comentario; muestra progreso por red hasta que terminen todas.
+- **Comentarios y explicaciones**: Vista por Request y red con texto del post/comentario y explicación por ítem.
+- **Gráficas**: Generación de gráficas a partir de resultados y análisis (por Request).
+
+---
+
+## ✨ Características
+
+### Scraping
+
+- Procesos independientes por red (multiprocessing).
+- Límite configurable de posts por red.
+- Sesiones con cookies; login manual si no hay cookies válidas.
+- Delays aleatorios y comportamiento tipo humano para reducir detección.
+- Parada ordenada de todos los procesos.
+
+### Interfaz y datos
+
+- Log de actividad en tiempo real (WebSocket).
+- Selector de Request para descargar CSV o ejecutar análisis LLM.
+- Descarga de resultados en CSV (todos o por Request).
+- Reportes de análisis LLM por red (texto y JSON).
+- Galería de gráficas por Request.
+
+### Análisis LLM
+
+- Análisis por red (LinkedIn, Instagram, Twitter, Facebook).
+- Progreso visible: “Completada [Red]” / “Analizando [Red]…” hasta que terminen todas.
+- Sentimiento y explicación breve por post y por comentario.
+- Sección **Comentarios y explicaciones**: ver cada publicación con post, comentarios y explicación por ítem.
+
+### Gráficas
+
+- Generación desde `resultados.db` y `analisis.db`.
+- Imágenes guardadas en `images/<request>/`.
+- Visualización en carrusel en la web.
+
+---
+
+## 🏗️ Arquitectura
+
+```
+                    ┌─────────────────────────────────────────┐
+                    │           Navegador (Usuario)           │
+                    │  index.html + app.js + style.css        │
+                    └──────────────────┬──────────────────────┘
+                                       │ HTTP / WebSocket
+                    ┌──────────────────▼──────────────────────┐
+                    │         FastAPI (app/main.py)           │
+                    │  /api/scrape/*, /api/llm/*, /api/charts  │
+                    │  /api/comments-explained, /api/requests │
+                    └──────────────────┬──────────────────────┘
+                                       │
+        ┌──────────────────────────────┼──────────────────────────────┐
+        │                              │                              │
+        ▼                              ▼                              ▼
+┌───────────────┐            ┌─────────────────┐            ┌─────────────────┐
+│  Multiproc.   │            │  Thread drain   │            │  SQLite         │
+│  Scrapers     │            │  llm_queue      │            │  resultados.db  │
+│  (process/)   │───────────▶│  (completados) │            │  reportes.db    │
+│  + Writer     │            └─────────────────┘            │  analisis.db    │
+└───────┬───────┘                                            └────────┬────────┘
+        │                                                             │
+        │ Playwright                                                  │
+        ▼                                                             ▼
+┌───────────────┐                                            ┌─────────────────┐
+│  Chromium     │                                            │  LLM DeepSeek   │
+│  (por red)    │                                            │  (sentimiento   │
+└───────────────┘                                            │   por post/comm) │
+                                                             └─────────────────┘
 ```
 
-### Process Flow
+### Flujo
 
-1. **User Input**: Query and configuration via Tkinter GUI
-2. **Process Spawning**: Independent processes for each social network
-3. **Browser Automation**: Playwright-based headless/headful browsing
-4. **Data Extraction**: Parallel scraping with anti-detection measures
-5. **Queue Management**: Thread-safe result aggregation
-6. **CSV Writing**: Atomic writes to prevent data corruption
-7. **NLP Analysis**: Post-processing with text mining pipeline
-
----
-
-## 🌐 Supported Platforms
-
-| Platform | Status | Features | Authentication |
-|----------|--------|----------|----------------|
-| **Reddit** | ✅ Active | Posts, comments, metadata | Cookie-based |
-| **LinkedIn** | ✅ Active | Posts, comments, profile data | Cookie + Manual |
-| **Instagram** | ✅ Active | Posts, comments, hashtags | Cookie + Manual |
-| **Facebook** | ✅ Active | Posts, search results | Cookie + Manual |
-| **Twitter/X** | ⚠️ Disabled | N/A | N/A |
+1. Usuario configura Request (tema), máximo de posts y redes en la web.
+2. Backend arranca un proceso escritor (SQLite) y un proceso por cada red seleccionada.
+3. Cada scraper usa Playwright/Chromium, hace búsqueda (query entre comillas) y escribe en la cola de resultados.
+4. El proceso escritor escribe en `resultados.db`.
+5. Análisis LLM: el usuario elige Request y lanza el análisis; se ejecuta un proceso por red; cada uno escribe en `reportes.db` y `analisis.db`; el backend trackea “completada [red]” y la UI muestra progreso hasta que terminen todas.
+6. Gráficas: se generan desde las DB y se sirven desde `images/<request>/`.
 
 ---
 
-## 📦 Installation
+## 🌐 Plataformas soportadas
 
-### Prerequisites
+| Plataforma   | Estado  | Uso por defecto | Autenticación        |
+|-------------|--------|-----------------|----------------------|
+| **LinkedIn**  | ✅ Activo | Sí              | Cookies + manual     |
+| **Instagram** | ✅ Activo | Sí              | Cookies + manual     |
+| **Facebook**  | ✅ Activo | Sí              | Cookies + manual     |
+| **Twitter/X**  | ✅ Activo | Sí              | Cookies + manual     |
+| **Reddit**    | ✅ Código | No (no en UI por defecto) | Cookies + manual     |
 
-- **Python**: 3.8 or higher
-- **Operating System**: Linux, macOS, or Windows
-- **Browser**: Chromium (auto-installed by Playwright)
+---
 
-### Step 1: Clone the Repository
+## 📦 Instalación
+
+### Requisitos
+
+- **Python**: 3.8 o superior
+- **Sistema**: Windows, macOS o Linux
+- **Chromium**: instalado vía Playwright
+
+### Pasos
+
+1. **Clonar el repositorio**
 
 ```bash
 git clone https://github.com/Juanja1306/Social-Data-Harvester-Large-Scale-Data-Extraction-from-Social-Networks.git
 cd Social-Data-Harvester-Large-Scale-Data-Extraction-from-Social-Networks
 ```
 
-### Step 2: Create Virtual Environment (Recommended)
+2. **Entorno virtual (recomendado)**
 
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Windows:
+venv\Scripts\activate
+# Linux/macOS:
+source venv/bin/activate
 ```
 
-### Step 3: Install Dependencies
+3. **Dependencias**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 4: Install Playwright Browsers
+4. **Playwright (Chromium)**
 
 ```bash
 playwright install chromium
 ```
 
-### Step 5: Download NLTK Resources (for NLP analysis)
+5. **Variables de entorno**
 
-```python
-python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt')"
-```
+Crear un archivo `.env` en la raíz del proyecto (ver [Configuración](#-configuración)).
 
 ---
 
-## 🚀 Usage
+## ⚙️ Configuración
 
-### Basic Scraping
+### Archivo `.env`
 
-1. **Launch the GUI**:
+En la raíz del proyecto, crea `.env` con al menos:
 
-   ```bash
-   python main.py
-   ```
+```env
+# Obligatorio para análisis LLM (DeepSeek)
+DEEPSEEK_API_KEY=tu_api_key_de_deepseek
+```
 
-2. **Configure Search**:
-   - Enter search query (e.g., "Educacion en Estados Unidos")
-   - Set maximum posts per platform (default: 50)
+Opcionalmente puedes definir credenciales para las redes (el proyecto puede usarlas según la lógica de cada scraper); no incluyas datos reales en el README ni en el repositorio.
 
-3. **Start Scraping**:
-   - Click "Iniciar Búsqueda"
-   - Browser windows will open for each platform
-   - **Manual Login**: If cookies are invalid, log in manually when prompted
-   - Monitor progress in the log panel
+### Configuración en código
 
-4. **Stop Scraping**:
-   - Click "Parar Búsqueda" to gracefully shutdown all processes
+- **Redes por defecto**: `app/config.py` → `DEFAULT_NETWORKS` (LinkedIn, Instagram, Facebook, Twitter).
+- **Redes para LLM**: `LLM_NETWORKS` en el mismo archivo.
+- **Bases de datos**: `DATABASE_FILENAME`, `REPORTES_DB_FILENAME`, `ANALISIS_DB_FILENAME` en `app/config.py`.
+- **Timeout al parar procesos**: `STOP_JOIN_TIMEOUT` en `app/config.py`.
 
-### NLP Analysis
+---
 
-After scraping, analyze the collected data:
+## 🚀 Uso
+
+### Arrancar la aplicación
+
+Desde la **raíz del proyecto**:
 
 ```bash
-python text_mining_analysis.py
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Outputs** (saved to `nlp_outputs/`):
+Abre en el navegador: `http://localhost:8000`
 
-- `top_tfidf_terms.txt`: Top 50 TF-IDF weighted terms
-- `lda_topics.txt`: Discovered topics with top terms
-- `wordcloud.png`: Visual word cloud
-- `top_terms.png`: Bar chart of most frequent terms
-- `top_bigrams.png`: Bar chart of most common bigrams
+### Flujo básico
+
+1. **Configuración de búsqueda**
+   - Request (tema): texto o selección del desplegable (basado en Requests ya usados).
+   - Máximo de posts por red.
+   - Marcar las redes a usar (LinkedIn, Instagram, Facebook, Twitter).
+
+2. **Iniciar búsqueda**
+   - Clic en **Iniciar búsqueda**. Se abren ventanas de Chromium por red; si hace falta, inicia sesión manualmente.
+   - La búsqueda se envía como **frase exacta** (entre comillas dobles) en cada plataforma.
+   - El log se actualiza en tiempo real.
+
+3. **Parar búsqueda**
+   - **Parar búsqueda** detiene todos los procesos y persiste lo ya guardado en `resultados.db`.
+
+4. **Resultados y análisis**
+   - **Descargar CSV**: elegir Request (o “Todos”) y usar el enlace de descarga.
+   - **Análisis LLM**: elegir Request y pulsar **Ejecutar análisis LLM**. Verás “Completada [Red]” / “Analizando [Red]…” hasta que terminen todas las redes; luego se muestran las pestañas de reportes.
+   - **Comentarios y explicaciones**: elegir Request y opcionalmente Red, luego **Ver comentarios y explicaciones** para ver cada post/comentario con su explicación.
+   - **Gráficas**: elegir Request y **Generar gráficas**; se muestran en la galería inferior.
 
 ---
 
-## 📁 Project Structure
+## 📁 Estructura del proyecto
 
 ```
-Social-Data-Harvester/
+Social-Data-Harvester--Large-Scale-Data-Extraction-from-Social-Networks/
 │
-├── main.py                      # Main GUI application & orchestrator
-├── text_mining_analysis.py      # NLP analysis pipeline
-├── requirements.txt             # Python dependencies
-├── README.md                    # This file
-│
-├── process/                     # Scraper modules
+├── app/
 │   ├── __init__.py
-│   ├── Process_Reddit.py        # Reddit scraper
-│   ├── Process_Linkedin.py      # LinkedIn scraper
-│   ├── Process_Instagram.py     # Instagram scraper
-│   └── Process_Facebook.py      # Facebook scraper
+│   ├── main.py              # FastAPI: rutas, WebSocket, estado
+│   ├── config.py            # DB, redes, timeouts
+│   ├── scraping.py           # run_scraper, run_llm_process, SQLite writer, export CSV
+│   ├── charts.py            # Gráficas desde resultados.db y analisis.db
+│   └── static/
+│       ├── index.html       # Interfaz web
+│       ├── css/style.css
+│       └── js/app.js
 │
-├── nlp_outputs/                 # NLP analysis results
-│   ├── top_tfidf_terms.txt
-│   ├── lda_topics.txt
-│   ├── wordcloud.png
-│   ├── top_terms.png
-│   └── top_bigrams.png
+├── process/
+│   ├── __init__.py
+│   ├── Process_Linkedin.py
+│   ├── Process_Instagram.py
+│   ├── Process_Facebook.py
+│   ├── Process_Twitter.py
+│   └── Process_Reddit.py
 │
-├── resultados.csv               # Scraped data (generated)
+├── LLM/
+│   ├── __init__.py
+│   └── sentiment_analyzer_deepseek.py   # Análisis sentimiento (DeepSeek)
 │
-└── *_cookies.json               # Session cookies (generated)
-    ├── reddit_cookies.json
-    ├── linkedin_cookies.json
-    ├── instagram_cookies.json
-    └── facebook_cookies.json
+├── .env                     # DEEPSEEK_API_KEY (y opc. credenciales)
+├── requirements.txt
+├── README.md
+│
+├── resultados.db             # Generado: datos scrape (RedSocial, Request, Data, etc.)
+├── reportes.db              # Generado: reportes texto por red/request
+├── analisis.db              # Generado: JSON de análisis por publicación/red/request
+└── images/                  # Generado: gráficas por request
+    └── <request>/
+        └── *.png
 ```
 
 ---
 
-## 🔄 Data Pipeline
+## 🗄️ Bases de datos y pipeline de datos
 
-### 1. Data Collection
+### `resultados.db` — Tabla `resultados`
 
-```python
-# CSV Schema (resultados.csv)
-{
-    'RedSocial': str,        # Platform name (e.g., "Reddit", "LinkedIn")
-    'IDP': int,              # Process ID
-    'Request': str,          # Search query
-    'FechaPeticion': str,    # Request timestamp (YYYY-MM-DD HH:MM:SS)
-    'FechaPublicacion': str, # Post publication date (if available)
-    'idPublicacion': str,    # Unique post ID (hash-based)
-    'Data': str              # Post content (max 2200 chars)
-}
-```
+| Columna          | Tipo   | Descripción                          |
+|------------------|--------|--------------------------------------|
+| id               | INTEGER| PK autoincremental                   |
+| RedSocial        | TEXT   | LinkedIn, Instagram, Facebook, Twitter |
+| IDP              | INTEGER| ID de proceso                        |
+| Request          | TEXT   | Tema de búsqueda                     |
+| FechaPeticion    | TEXT   | Fecha/hora de la petición            |
+| FechaPublicacion | TEXT   | Fecha de la publicación (si existe)  |
+| idPublicacion    | TEXT   | Identificador de la publicación      |
+| Data             | TEXT   | `post|comentario1|comentario2|...`   |
 
-### 2. Text Preprocessing
+### `reportes.db` — Tabla `reportes`
 
-```python
-# Pipeline stages
-Raw Text → Clean (remove URLs, emojis) → Tokenize → Remove Stopwords → Stem → Tokens
-```
+Reportes de texto por red y request (estadísticas, métricas de análisis LLM).
 
-### 3. Feature Extraction
+| Columna   | Tipo | Descripción        |
+|-----------|-----|--------------------|
+| id        | INTEGER | PK              |
+| network   | TEXT   | Red social     |
+| request   | TEXT   | Request        |
+| content   | TEXT   | Reporte texto  |
+| created_at| TEXT   | Fecha creación |
 
-- **TF-IDF Vectorization**: Converts text to numerical features
-- **N-gram Analysis**: Extracts meaningful phrase patterns
-- **Topic Modeling**: Discovers latent themes using LDA
+### `analisis.db` — Tabla `analisis`
 
----
+JSON con análisis por publicación: sentimiento y explicación del post y de cada comentario.
 
-## 📊 NLP Analysis
+| Columna    | Tipo   | Descripción                          |
+|------------|--------|--------------------------------------|
+| id         | INTEGER| PK                                   |
+| network    | TEXT   | Red social                           |
+| request    | TEXT   | Request                              |
+| content_json| TEXT  | Lista de objetos por publicación    |
+| created_at | TEXT   | Fecha creación                       |
 
-### TF-IDF Analysis
-
-Identifies the most important terms across the corpus:
-
-```python
-# Top terms weighted by TF-IDF score
-educacion: 0.342
-estados: 0.298
-unidos: 0.287
-...
-```
-
-### Topic Modeling (LDA)
-
-Discovers hidden topics in the data:
-
-```python
-# Topic 1: Education Policy
-educacion, politica, reforma, sistema, publico
-
-# Topic 2: Technology in Education
-tecnologia, digital, aprendizaje, online, herramientas
-```
-
-### Bigram Extraction
-
-Finds common two-word phrases:
-
-```python
-# Most frequent bigrams
-estados unidos: 145
-educacion superior: 89
-sistema educativo: 67
-```
+Cada elemento de `content_json` incluye `idPublicacion`, `analisis_post` (sentimiento, explicación), `analisis_comentarios` (lista de sentimiento y explicación por comentario).
 
 ---
 
-## 🔧 Technical Details
+## 🔌 API REST
 
-### Multiprocessing Architecture
+Base: `/api`
 
-- **Process Isolation**: Each scraper runs in a separate process
-- **Queue Communication**: Thread-safe `multiprocessing.Queue` for data transfer
-- **Event Signaling**: `multiprocessing.Event` for graceful shutdown
-- **CSV Writer Process**: Dedicated process to prevent write conflicts
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/scrape/start` | Inicia scraping (body: query, max_posts, networks) |
+| POST | `/scrape/stop` | Detiene scraping |
+| GET | `/scrape/status` | Estado: running, networks, llm_running, llm_networks, llm_completed_networks |
+| GET | `/requests` | Lista de Requests distintos (para selectores) |
+| GET | `/results` | CSV de resultados (?request= opcional) |
+| GET | `/comments-explained` | Publicaciones con post/comentarios y explicación (?request=, &network= opcional) |
+| POST | `/llm/analyze` | Lanza análisis LLM (body: request, networks) |
+| GET | `/llm/reports` | Lista de reportes por red (has_text, has_json) |
+| GET | `/llm/reports/{network}` | Contenido del reporte (?format=text|json, &request= opcional) |
+| POST | `/charts/generate` | Genera gráficas (body: request opcional) |
+| GET | `/charts/image/{folder}/{filename}` | Sirve imagen de gráfica |
 
-### Anti-Detection Techniques
-
-```python
-# Random delays (human-like behavior)
-time.sleep(random.uniform(2.0, 4.0))
-
-# Stealth JavaScript injection
-page.add_init_script("""
-    Object.defineProperty(navigator, 'webdriver', {get: () => undefined})
-""")
-
-# User-agent spoofing
-context = browser.new_context(
-    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) ...'
-)
-```
-
-### Cookie Management
-
-```python
-# Save cookies after successful login
-def save_cookies(self, page):
-    cookies = page.context.cookies()
-    with open('platform_cookies.json', 'w') as f:
-        json.dump(cookies, f)
-
-# Load cookies on next run
-def load_cookies(self, page):
-    if os.path.exists('platform_cookies.json'):
-        with open('platform_cookies.json', 'r') as f:
-            cookies = json.load(f)
-            page.context.add_cookies(cookies)
-```
-
-### Duplicate Detection
-
-```python
-# Hash-based deduplication
-post_id = str(hash(raw_text[:150]))
-if post_id not in self.processed_posts:
-    # Process new post
-    self.processed_posts.add(post_id)
-```
+WebSocket: `/ws/log` — Log de actividad en tiempo real.
 
 ---
 
-## ⚙️ Configuration
+## 🖥️ Interfaz web
 
-### Adjusting Post Limits
-
-Modify in GUI or directly in code:
-
-```python
-# main.py - Line 106
-self.max_posts_entry.insert(0, "50")  # Change default limit
-```
-
-### Enabling/Disabling Platforms
-
-```python
-# main.py - Line 167
-networks = ["Reddit", "LinkedIn", "Instagram", "Facebook"]
-# Remove platforms you don't want to scrape
-```
-
-### Customizing Delays
-
-```python
-# process/Process_*.py
-def random_sleep(self, min_time=0.5, max_time=2.0):
-    time.sleep(random.uniform(min_time, max_time))
-```
-
-### NLP Stopwords
-
-Add custom stopwords:
-
-```python
-# text_mining_analysis.py - Line 79-117
-def build_stopwords():
-    custom_words = {"palabra1", "palabra2", "palabra3"}
-    return stopwords_es | stopwords_en | custom_words
-```
+- **Configuración de búsqueda**: Request, máximo de posts, checkboxes de redes.
+- **Log de actividad**: Mensajes en vivo (WebSocket); opción autoScroll.
+- **Resultados y análisis**: Selector de Request para descargar CSV, botón de análisis LLM, selector para generar gráficas.
+- **Reportes de análisis LLM**: Pestañas por red; contenido de reporte (texto) o JSON según formato.
+- **Comentarios y explicaciones**: Selector de Request y Red; lista de publicaciones con post, comentarios y explicación por ítem.
+- **Galería de gráficas**: Carrusel de imágenes generadas por Request.
 
 ---
 
-## 🐛 Troubleshooting
+## 🤖 Análisis LLM (DeepSeek)
 
-### Issue: "Playwright browser not found"
+- **Modelo**: DeepSeek vía API (cliente compatible con OpenAI).
+- **Entrada**: CSV exportado por Request desde `resultados.db` (una fila por publicación; columna `Data` = post\|comentarios).
+- **Proceso**: Por cada red seleccionada se lanza un proceso que analiza cada post y cada comentario; devuelve sentimiento (Positivo/Negativo/Neutral) y explicación breve.
+- **Salida**: Se guarda en `reportes.db` (texto) y `analisis.db` (JSON por publicación).
+- **UI**: Durante la ejecución se muestra “Completada [Red]” o “Analizando [Red]…” por cada red; el panel de carga solo se oculta cuando **todas** han terminado.
 
-**Solution**:
+---
+
+## 📊 Gráficas
+
+- **Origen**: `resultados.db` y `analisis.db` (conteos por red, por sentimiento, fechas, etc.).
+- **Generación**: `app/charts.py`; imágenes en `images/<request>/`.
+- **Visualización**: En la web, sección “Galería de gráficas” con carrusel por Request.
+
+---
+
+## 💬 Comentarios y explicaciones
+
+- **Origen**: Cruce de `resultados.db` (texto post/comentarios) y `analisis.db` (sentimiento y explicación por ítem).
+- **Uso**: En la web, sección “Comentarios y explicaciones”: elegir Request y opcionalmente Red; al pulsar **Ver comentarios y explicaciones** se listan las publicaciones con:
+  - Post: texto, sentimiento, explicación.
+  - Comentarios: texto, sentimiento y explicación por comentario.
+- **API**: `GET /api/comments-explained?request=...&network=...` (network opcional).
+
+---
+
+## 🔧 Detalles técnicos
+
+- **Multiprocessing**: Un proceso por red de scraping + un proceso escritor; colas `Queue` y `Event` para parada.
+- **LLM**: Un proceso por red; cada uno escribe en una cola al terminar; un hilo en el proceso principal drena la cola y actualiza `llm_completed_networks` para el progreso en la UI.
+- **Búsqueda**: En cada scraper la query se envía entre comillas dobles en la URL/parámetros para búsqueda por frase exacta.
+- **Cookies**: Los scrapers pueden guardar/cargar cookies por plataforma para reutilizar sesión.
+
+---
+
+## 🐛 Solución de problemas
+
+### Playwright / Chromium
 
 ```bash
 playwright install chromium
 ```
 
-### Issue: "NLTK resources not found"
+### “No hay datos” / “No results”
 
-**Solution**:
+- Asegúrate de haber ejecutado al menos una búsqueda y de que `resultados.db` existe en la raíz del proyecto.
+- Para análisis LLM o comentarios, comprueba que el Request elegido tenga filas en `resultados.db`.
 
-```python
-import nltk
-nltk.download('stopwords')
-nltk.download('punkt')
-```
+### Análisis LLM no arranca o falla
 
-### Issue: Scraper stuck in infinite loop
+- Verifica que `.env` tenga `DEEPSEEK_API_KEY` válida.
+- Revisa que el Request tenga datos en el CSV (exportación desde `resultados.db`).
 
-**Symptoms**: Facebook scraper shows "Candidatos encontrados: 4" repeatedly
+### Scraper bloqueado o sin progreso
 
-**Solution**: The latest version includes:
+- Algunos scrapers tienen detección de estancamiento y límite de iteraciones; revisa el log en la UI.
+- Si pide login, inicia sesión manualmente en la ventana de Chromium que se abre.
 
-- Stall detection (exits after 5 iterations without progress)
-- Timeout protection (max 100 iterations)
-- Detailed logging to identify filtering issues
+### Gráficas vacías
 
-### Issue: Login required every time
-
-**Cause**: Cookies not being saved or expired
-
-**Solution**:
-
-1. Check if `*_cookies.json` files exist
-2. Ensure write permissions in project directory
-3. Re-login manually and verify cookies are saved
-
-### Issue: CSV encoding errors
-
-**Cause**: Emoji or special characters
-
-**Solution**: The `clean_text()` function automatically removes emojis and ensures UTF-8 encoding.
+- Genera primero el análisis LLM para el Request deseado; muchas gráficas dependen de `analisis.db`.
 
 ---
 
-## ⚖️ Legal & Ethical Considerations
+## ⚖️ Aspectos legales y éticos
 
-> **IMPORTANT**: This tool is designed for **academic research and educational purposes only**.
-
-### Usage Guidelines
-
-✅ **Allowed**:
-
-- Academic research with proper citations
-- Educational demonstrations
-- Personal data analysis projects
-- Publicly available content only
-
-❌ **Prohibited**:
-
-- Commercial use without platform authorization
-- Violating platform Terms of Service
-- Scraping private/protected content
-- Harassment or stalking
-- Data resale or redistribution
-
-### Best Practices
-
-1. **Respect robots.txt**: Check platform policies
-2. **Rate Limiting**: Use reasonable delays between requests
-3. **Data Privacy**: Anonymize personal information
-4. **Attribution**: Cite data sources in research
-5. **Compliance**: Follow GDPR, CCPA, and local regulations
+- Herramienta orientada a **investigación y uso educativo**.
+- Usar solo sobre contenido **público** y respetando los términos de uso de cada plataforma.
+- No usar para fines comerciales no autorizados, scraping de contenido privado, acoso ni reventa de datos.
+- Recomendable: respetar robots.txt, limitar frecuencia de peticiones y anonimizar datos personales en publicaciones.
 
 ---
 
-## 🙏 Acknowledgments
+## 📚 Referencias
 
-- **Playwright**: Browser automation framework
-- **NLTK**: Natural Language Toolkit
-- **scikit-learn**: Machine learning library
-- **Tkinter**: Python GUI framework
-
----
-
-## 📚 References
-
-- [Playwright Documentation](https://playwright.dev/python/)
-- [NLTK Documentation](https://www.nltk.org/)
-- [scikit-learn User Guide](https://scikit-learn.org/stable/user_guide.html)
-- [Multiprocessing in Python](https://docs.python.org/3/library/multiprocessing.html)
+- [Playwright para Python](https://playwright.dev/python/)
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [DeepSeek API](https://platform.deepseek.com/)
+- [Multiprocessing en Python](https://docs.python.org/3/library/multiprocessing.html)
